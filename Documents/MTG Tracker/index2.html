@@ -148,15 +148,9 @@
       }
 
       .player-row {
-        border: 1px solid #e0e0e0;
-        padding: 16px;
-        border-radius: 8px;
-        background: #fafafa;
-        transition: all 0.2s;
-        display: grid;
-        grid-template-columns: 1fr 150px;
-        gap: 16px;
-        align-items: start;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
       }
 
       .player-row:hover {
@@ -177,25 +171,51 @@
         font-weight: 600;
       }
 
-      .player-row-portrait {
-        display: flex;
-        flex-direction: column;
-        align-items: center;
-      }
+     .commander-portrait {
+    width: 100%;
+    height: 180px;
+    object-fit: cover;
+    border-radius: 0;
+    border: none;
+    margin-bottom: 0;
+    display: block;
+}
 
-      .commander-portrait-preview {
-        width: 120px;
-        height: 160px;
-        background: linear-gradient(135deg, #f0f0f0 0%, #e8e8e8 100%);
-        border: 2px solid #d0d0d0;
-        border-radius: 6px;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        font-size: 3.5rem;
-        margin-bottom: 8px;
-        overflow: hidden;
-        flex-shrink: 0;
+.commander-display {
+    position: relative;
+    width: 100%;
+    height: 100%;
+}
+
+.commander-name-display {
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    right: 0;
+
+    padding: 12px;
+
+    background: linear-gradient(
+        transparent,
+        rgba(0,0,0,0.85)
+    );
+
+    color: white;
+    font-weight: bold;
+    font-size: 1rem;
+    text-align: center;
+}
+
+     .commander-portrait-preview {
+    width: 100%;
+    height: 180px;
+    background: linear-gradient(135deg, #f0f0f0 0%, #e8e8e8 100%);
+    border: 2px solid #d0d0d0;
+    border-radius: 12px;
+    overflow: hidden;
+    display: flex;
+    align-items: center;
+    justify-content: center;
       }
 
       .commander-portrait-preview img {
@@ -504,14 +524,14 @@
         font-size: 0.9rem;
       }
 
-      .commander-portrait {
-        width: 60px;
-        height: 80px;
-        object-fit: cover;
-        border-radius: 4px;
-        border: 1px solid #d0d0d0;
-        margin-bottom: 8px;
-        display: block;
+     .commander-portrait {
+    width: 100%;
+    height: 180px;
+    object-fit: cover;
+    border-radius: 0;
+    border: none;
+    margin-bottom: 0;
+    display: block;
       }
 
       .commander-input-group {
@@ -743,7 +763,44 @@
       function saveCommanderImages() {
         localStorage.setItem(IMAGES_KEY, JSON.stringify(commanderImages));
       }
+async function fetchCommanderImage(commanderName) {
+  if (!commanderName) return null;
 
+  try {
+    const response = await fetch(
+      `https://api.scryfall.com/cards/named?fuzzy=${encodeURIComponent(commanderName)}`
+    );
+
+    if (!response.ok) {
+      console.error('Commander not found:', commanderName);
+      return null;
+    }
+
+    const card = await response.json();
+
+    let imageUrl = null;
+
+    if (card.image_uris) {
+      imageUrl = card.image_uris.art_crop;
+    } else if (
+      card.card_faces &&
+      card.card_faces[0] &&
+      card.card_faces[0].image_uris
+    ) {
+      imageUrl = card.card_faces[0].image_uris.art_crop;
+    }
+
+    if (!imageUrl) return null;
+
+    commanderImages[commanderName] = imageUrl;
+    saveCommanderImages();
+
+    return imageUrl;
+  } catch (error) {
+    console.error(error);
+    return null;
+  }
+}
       function renderCommanderLibrary() {
         const library = document.getElementById('commander-library');
         const commanders = Object.keys(commanderImages).sort();
@@ -769,7 +826,19 @@
         const pending = pendingPortraits[position];
 
         if (commanderName && commanderImages[commanderName]) {
-          portraitDiv.innerHTML = `<img src="${commanderImages[commanderName]}" alt="${commanderName}" class="commander-portrait">`;
+  portraitDiv.innerHTML = `
+    <div class="commander-display">
+      <img
+        src="${commanderImages[commanderName]}"
+        alt="${commanderName}"
+        class="commander-portrait"
+      >
+      <div class="commander-name-display">
+        ${commanderName}
+      </div>
+    </div>
+  `;
+
         } else if (pending && pending.data && pending.commander === commanderName) {
           portraitDiv.innerHTML = `<img src="${pending.data}" alt="Pending portrait" class="commander-portrait">`;
         } else {
@@ -1041,9 +1110,20 @@
             populateCommanderDataLists();
           });
 
-          document.getElementById(`commander-${position}`).addEventListener('input', () => {
-            updatePortraitPreview(position);
-          });
+          document.getElementById(`commander-${position}`).addEventListener('change', async () => {
+  const commanderName =
+    document.getElementById(`commander-${position}`).value.trim();
+
+  if (
+    commanderName &&
+    !commanderImages[commanderName]
+  ) {
+    await fetchCommanderImage(commanderName);
+    renderCommanderLibrary();
+  }
+
+  updatePortraitPreview(position);
+});
 
           document.getElementById(`image-${position}`).addEventListener('change', event => {
             const file = event.target.files[0];
