@@ -1,8 +1,11 @@
-const STORAGE_KEY = 'mtgGameTracker.games.dev'; // Changed for dev environment
-const LEGACY_IMAGES_KEY = 'mtgGameTracker.commanderImages.dev'; // Changed for dev environment
-const COMMANDER_DATA_KEY = 'mtgGameTracker.commanderData.dev'; // Changed for dev environment
-const THEME_KEY = 'mtgGameTracker.theme.dev'; // Changed for dev environment
-const RAGE_QUIT_KEY = 'mtgGameTracker.rageQuits.dev'; // Changed for dev environment
+// Replace these with your actual Supabase Project URL and Anon Key
+const SUPABASE_URL = 'https://dgjyqxidptjeoyujdbnu.supabase.co';
+const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImRnanlxeGlkcHRqZW95dWpkYm51Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODE1NDM1NjQsImV4cCI6MjA5NzExOTU2NH0.KJkUAUpO5KQ5KoTvDrtM_fekLc5fZjn6_CMN6e9YitE';
+
+const sb = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+const THEME_KEY = 'mtgGameTracker.theme.dev'; // Theme stays in localStorage
+
 const seatFields = [
   { key: 'first', seat: 1 },
   { key: 'second', seat: 2 },
@@ -33,6 +36,11 @@ function escapeHtml(value) {
     '"': '&quot;',
     "'": '&#039;'
   }[char]));
+}
+
+function setHtml(id, html) {
+  const el = document.getElementById(id);
+  if (el) el.innerHTML = html;
 }
 
 function ordinal(value) {
@@ -107,58 +115,50 @@ function getCommanderColors(commanderName) {
     return commanderData[commanderName] ? commanderData[commanderName].colors || [] : [];
 }
 
-function saveGames() {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(games));
+async function syncToSupabase(table, data, matchKey = 'id') {
+    // Helper to push local changes to cloud
+    const { error } = await sb.from(table).upsert(data);
+    if (error) console.error(`Error syncing ${table}:`, error);
 }
 
-function saveCommanderData() {
-  localStorage.setItem(COMMANDER_DATA_KEY, JSON.stringify(commanderData));
-}
+async function loadAllData() {
+    // Load everything from Supabase instead of LocalStorage
+    const [gamesRes, cmdRes, rageRes] = await Promise.all([
+        sb.from('games').select('*').order('date', { ascending: true }),
+        sb.from('commander_data').select('*'),
+        sb.from('rage_quits').select('*').order('date', { ascending: false })
+    ]);
 
-function loadCommanderData() {
-  const storedData = localStorage.getItem(COMMANDER_DATA_KEY);
-  let loaded = storedData ? JSON.parse(storedData) : {};
+    if (gamesRes.error) console.error("Supabase Load Error (Games):", gamesRes.error.message);
+    if (cmdRes.error) console.error("Supabase Load Error (Commanders):", cmdRes.error.message);
+    if (rageRes.error) console.error("Supabase Load Error (Salt):", rageRes.error.message);
 
-  const migrated = {};
-  Object.entries(loaded).forEach(([name, value]) => {
-    const normalName = titleCase(name);
-    const isObj = value && typeof value === 'object';
-    const data = {
-      image: isObj ? value.image : value,
-      colors: isObj && Array.isArray(value.colors) ? value.colors : [],
-      colorsFetched: isObj ? (!!value.colorsFetched || (Array.isArray(value.colors) && value.colors.length > 0)) : false
-    };
-    if (!migrated[normalName] || (!migrated[normalName].image && data.image)) {
-      migrated[normalName] = data;
+    const gameCount = gamesRes.data?.length || 0;
+    console.log(`Fetched ${gameCount} games from Supabase`);
+
+    if (gameCount === 0 && !gamesRes.error) {
+        console.warn("Fetched 0 games. If you expected data, check if Row Level Security (RLS) policies are missing in Supabase.");
     }
-  });
-  commanderData = migrated;
-  
-  games.forEach(game => {
-    game.players.forEach(player => ensureCommanderData(player.commander));
-  });
-}
 
-function loadGames() {
-  const rawGames = JSON.parse(localStorage.getItem(STORAGE_KEY) || '[]');
-  const normalised = normaliseGames(rawGames);
-  games = normalised.games;
-  
-  if (normalised.changed) saveGames();
-  loadCommanderData();
-  
-  try {
-    const storedRage = localStorage.getItem(RAGE_QUIT_KEY);
-    rageQuits = storedRage ? JSON.parse(storedRage) : [];
-  } catch (e) {
-    rageQuits = [];
-  }
+    if (gamesRes.data) games = gamesRes.data;
+    if (rageRes.data) rageQuits = rageRes.data;
+    
+    if (cmdRes.data) {
+        commanderData = {};
+        cmdRes.data.forEach(row => {
+            commanderData[row.name] = { 
+                image: row.image, 
+                colors: row.colors, 
+                colorsFetched: row.colors_fetched 
+            };
+        });
+    }
 
-  populateDataLists();
-  renderCommanderLibrary();
-  renderGameHistory();
-  renderStats();
-  renderRageQuits();
+    populateDataLists();
+    renderCommanderLibrary();
+    renderGameHistory();
+    renderStats();
+    renderRageQuits();
 }
 
 async function fetchCommanderImage(commanderName) {
@@ -187,7 +187,14 @@ async function fetchCommanderImage(commanderName) {
       colors: Array.isArray(card.color_identity) ? card.color_identity : [],
       colorsFetched: true
     };
-    saveCommanderData();
+    
+    await syncToSupabase('commander_data', {
+        name: commanderName,
+        image: imageUrl,
+        colors: commanderData[commanderName].colors,
+        colors_fetched: true
+    }, 'name');
+
     return imageUrl;
   } catch (error) {
     console.error("Scryfall Fetch Failed. If using Brave, try lowering Shields:", error);
@@ -1231,7 +1238,7 @@ window.addEventListener('load', () => {
     });
 
     initTheme();
-    loadGames();
+    loadAllData();
 
     const autocompleteTimers = {};
 
@@ -1301,15 +1308,24 @@ window.addEventListener('load', () => {
     safeAddListener('toggle-weekly', 'click', () => { chartViewMode = 'weekly'; document.getElementById('toggle-weekly').classList.add('active'); document.getElementById('toggle-monthly').classList.remove('active'); renderStats(); });
     safeAddListener('toggle-monthly', 'click', () => { chartViewMode = 'monthly'; document.getElementById('toggle-monthly').classList.add('active'); document.getElementById('toggle-weekly').classList.remove('active'); renderStats(); });
 
-    safeAddListener('save-game', 'click', event => {
+    safeAddListener('save-game', 'click', async event => {
       event.preventDefault();
       const validPlayers = validateGame(getSeatPlayers());
       if (!validPlayers) return;
       const game = { date: document.getElementById('game-date').value, players: validPlayers };
-      if (currentGame.index != null) { games[currentGame.index] = game; currentGame.index = null; }
-      else { games.push(game); }
-      games.sort((a, b) => a.date.localeCompare(b.date));
-      saveGames(); saveCommanderData(); populateDataLists(); renderCommanderLibrary(); renderGameHistory(); renderStats(); resetCurrentGame();
+      
+      // If we are editing, include the ID so Supabase updates the existing record
+      if (currentGame.index !== null && games[currentGame.index]) {
+          game.id = games[currentGame.index].id;
+      }
+
+      const { error } = await sb.from('games').upsert(game);
+      if (!error) {
+          await loadAllData();
+          resetCurrentGame();
+      } else {
+          console.error("Error saving game:", error);
+      }
     });
 
     safeAddListener('cancel-edit', 'click', () => { currentGame.index = null; resetCurrentGame(); });
@@ -1320,7 +1336,10 @@ window.addEventListener('load', () => {
       const p = event.target.closest('[data-player-detail]'); if (p) return openPlayerModal(p.dataset.playerDetail);
       if (event.target.matches('.delete-game')) {
         const index = Number(event.target.dataset.index);
-        if (confirm('Delete entry?')) { games.splice(index, 1); saveGames(); renderGameHistory(); renderStats(); }
+        if (confirm('Delete entry?')) {
+            const gameId = games[index].id;
+            sb.from('games').delete().eq('id', gameId).then(() => loadAllData());
+        }
       }
       if (event.target.matches('.edit-game')) {
         const index = Number(event.target.dataset.index); const game = games[index];
@@ -1339,17 +1358,19 @@ window.addEventListener('load', () => {
     safeAddListener('commander-library', 'click', event => {
       const c = event.target.closest('[data-commander-detail]'); if (c) return openCommanderModal(c.dataset.commanderDetail);
       if (event.target.matches('.delete-commander-image')) {
-        const name = event.target.dataset.commander; if (confirm(`Delete art for ${name}?`)) { delete commanderData[name]; saveCommanderData(); renderCommanderLibrary(); }
+        const name = event.target.dataset.commander; 
+        if (confirm(`Delete art for ${name}?`)) {
+            sb.from('commander_data').delete().eq('name', name).then(() => loadAllData());
+        }
       }
     });
 
-    safeAddListener('record-rage-quit', 'click', () => {
+    safeAddListener('record-rage-quit', 'click', async () => {
       const rInput = document.getElementById('rage-quit-reason'); const dInput = document.getElementById('rage-quit-date');
       const reason = rInput ? rInput.value.trim() : ''; const date = dInput ? dInput.value : '';
-      if (currentRageQuitIndex !== null) { rageQuits[currentRageQuitIndex] = { date, reason }; currentRageQuitIndex = null; }
-      else { rageQuits.push({ date, reason }); }
-      localStorage.setItem(RAGE_QUIT_KEY, JSON.stringify(rageQuits));
-      if (rInput) rInput.value = ''; renderRageQuits();
+      
+      await sb.from('rage_quits').upsert({ date, reason });
+      if (rInput) rInput.value = ''; loadAllData();
     });
 
     safeAddListener('stats-dashboard', 'click', event => {
@@ -1374,11 +1395,46 @@ function exportData() {
 function importData(jsonString) {
   try {
     const data = JSON.parse(jsonString);
-    if (confirm(`Import ${data.games.length} games?`)) {
-      games = data.games; games.sort((a, b) => a.date.localeCompare(b.date));
-      commanderData = data.commanderData || {}; rageQuits = data.rageQuits || [];
-      saveGames(); saveCommanderData(); localStorage.setItem(RAGE_QUIT_KEY, JSON.stringify(rageQuits));
-      location.reload();
+    const gamesToImport = data.games || [];
+    const rageQuitsToImport = data.rageQuits || [];
+    const commanderDataToImport = data.commanderData || {};
+
+    if (confirm(`Migrating ${gamesToImport.length} games. This may take a moment. Continue?`)) {
+        const runImport = async () => {
+            // We strip any existing IDs from local data to let Supabase generate fresh UUIDs
+            const cleanGames = gamesToImport.map(({ id, created_at, ...rest }) => ({
+                date: rest.date,
+                players: rest.players
+            }));
+            const cleanRage = rageQuitsToImport.map(({ id, ...rest }) => ({
+                date: rest.date,
+                reason: rest.reason
+            }));
+
+            const results = await Promise.all([
+                gamesToImport.length ? sb.from('games').insert(cleanGames) : Promise.resolve({ error: null }),
+                rageQuitsToImport.length ? sb.from('rage_quits').insert(cleanRage) : Promise.resolve({ error: null }),
+                Object.keys(commanderDataToImport).length ? sb.from('commander_data').upsert(
+                    Object.entries(commanderDataToImport).map(([name, val]) => ({
+                    name,
+                    image: val.image || '',
+                    colors: val.colors,
+                    colors_fetched: !!(val.colorsFetched || (val.colors && val.colors.length > 0))
+                    }))
+                ) : Promise.resolve({ error: null })
+            ]);
+
+            const errors = results.filter(r => r.error);
+            if (errors.length > 0) {
+                console.error("Import failed. Likely cause: RLS Policies.", errors);
+                const msg = errors.map(e => e.error.message).join('\n');
+                alert(`Import failed:\n${msg}`);
+            } else {
+            alert("Import successful! Your local data has been migrated to Supabase.");
+            location.reload();
+            }
+        };
+        runImport();
     }
   } catch (e) { alert("Failed: " + e.message); }
 }
