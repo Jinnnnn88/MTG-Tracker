@@ -10,10 +10,6 @@ const SUPABASE_KEY = 'your-public-anon-key';
 // Use window.supabase to avoid shadowing the global library with our local constant
 const supabase = (window.supabase && window.supabase.createClient) ? window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY) : null;
 
-// --- ADMIN CONFIGURATION ---
-const ADMIN_PASSPHRASE = 'your-secret-passphrase'; // Change this to your desired password
-let isAdmin = localStorage.getItem('mtg_admin_active') === 'true';
-
 const seatFields = [
   { key: 'first', seat: 1 },
   { key: 'second', seat: 2 },
@@ -733,6 +729,10 @@ function renderStats() {
     document.getElementById('seat-advantage-table-content').innerHTML = '';
     document.getElementById('color-statistics-table-content').innerHTML = '';
     document.getElementById('pair-stats-table-content').innerHTML = '';
+    setHtml('commander-stats-table-content', '');
+    setHtml('seat-advantage-table-content', '');
+    setHtml('color-statistics-table-content', '');
+    setHtml('pair-stats-table-content', '');
     return;
   }
 
@@ -1215,26 +1215,6 @@ function updateBountyIcons() {
   });
 }
 
-function updateAdminVisibility() {
-  const recordNavItem = document.querySelector('[data-tab="tab-record"]');
-  const saltUI = document.getElementById('salt-recording-ui');
-  const unlockBtn = document.getElementById('admin-unlock-btn');
-
-  if (isAdmin) {
-    if (recordNavItem) recordNavItem.style.display = 'block';
-    if (saltUI) saltUI.style.display = 'block';
-    if (unlockBtn) unlockBtn.innerHTML = '🔓 Lock Admin';
-  } else {
-    if (recordNavItem) recordNavItem.style.display = 'none';
-    if (saltUI) saltUI.style.display = 'none';
-    if (unlockBtn) unlockBtn.innerHTML = '🔒 Unlock';
-    // If they were on the record tab, move them to stats
-    if (document.getElementById('tab-record').classList.contains('active')) {
-        document.querySelector('[data-tab="tab-stats"]')?.click();
-    }
-  }
-}
-
 window.addEventListener('load', async () => {
   try {
     const today = new Date().toISOString().split('T')[0];
@@ -1243,6 +1223,42 @@ window.addEventListener('load', async () => {
     
     if (document.getElementById('rage-quit-date')) document.getElementById('rage-quit-date').value = today;
     currentGame.date = today;
+
+    const safeAddListener = (id, event, callback) => {
+      const el = document.getElementById(id);
+      if (el) el.addEventListener(event, callback);
+    };
+
+    // --- ATTACH UI CONTROLS FIRST (Reliability) ---
+    
+    safeAddListener('admin-unlock-btn', 'click', () => {
+      if (isAdmin) {
+        isAdmin = false;
+        localStorage.setItem('mtg_admin_active', 'false');
+      } else {
+        const entry = prompt('Enter Master Passphrase:');
+        if (entry === ADMIN_PASSPHRASE) {
+          isAdmin = true;
+          localStorage.setItem('mtg_admin_active', 'true');
+        } else if (entry !== null) {
+          alert('Incorrect passphrase.');
+        }
+      }
+      updateAdminVisibility();
+    });
+
+    safeAddListener('theme-toggle', 'click', toggleTheme);
+
+    // Winner Toggle Listener
+    document.querySelectorAll('.winner-toggle').forEach(button => {
+      button.addEventListener('click', (e) => {
+        const btn = e.target.closest('.winner-toggle');
+        document.querySelectorAll('.winner-toggle').forEach(btn => btn.classList.remove('active'));
+        if (btn) btn.classList.add('active');
+      });
+    });
+
+    // --- LOAD DATA ---
     initTheme();
     await loadGames();
 
@@ -1308,22 +1324,6 @@ window.addEventListener('load', async () => {
     });
 
     safeAddListener('theme-toggle', 'click', toggleTheme);
-
-    safeAddListener('admin-unlock-btn', 'click', () => {
-      if (isAdmin) {
-        isAdmin = false;
-        localStorage.setItem('mtg_admin_active', 'false');
-      } else {
-        const entry = prompt('Enter Master Passphrase:');
-        if (entry === ADMIN_PASSPHRASE) {
-          isAdmin = true;
-          localStorage.setItem('mtg_admin_active', 'true');
-        } else if (entry !== null) {
-          alert('Incorrect passphrase.');
-        }
-      }
-      updateAdminVisibility();
-    });
 
     // Navigation logic
     const navItems = document.querySelectorAll('.nav-item');
