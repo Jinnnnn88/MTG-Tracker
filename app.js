@@ -4,12 +4,6 @@ const COMMANDER_DATA_KEY = 'mtgGameTracker.commanderData';
 const THEME_KEY = 'mtgGameTracker.theme';
 const RAGE_QUIT_KEY = 'mtgGameTracker.rageQuits';
 
-// --- CLOUD CONFIGURATION ---
-const SUPABASE_URL = 'https://your-project-id.supabase.co';
-const SUPABASE_KEY = 'your-public-anon-key';
-// Use window.supabase to avoid shadowing the global library with our local constant
-const supabase = (window.supabase && window.supabase.createClient) ? window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY) : null;
-
 const seatFields = [
   { key: 'first', seat: 1 },
   { key: 'second', seat: 2 },
@@ -111,32 +105,20 @@ function getCommanderImage(commanderName) {
 }
 
 function getCommanderColors(commanderName) {
-  return commanderData[commanderName] ? commanderData[commanderName].colors || [] : [];
+    return commanderData[commanderName] ? commanderData[commanderName].colors || [] : [];
 }
 
-async function saveGames() {
+function saveGames() {
   localStorage.setItem(STORAGE_KEY, JSON.stringify(games));
-  if (supabase) {
-    await supabase.from('mtg_state').upsert({ id: 'current_games', data: games });
-  }
 }
 
-async function saveCommanderData() {
+function saveCommanderData() {
   localStorage.setItem(COMMANDER_DATA_KEY, JSON.stringify(commanderData));
-  if (supabase) {
-    await supabase.from('mtg_state').upsert({ id: 'commander_data', data: commanderData });
-  }
 }
 
-async function loadCommanderData() {
+function loadCommanderData() {
   const storedData = localStorage.getItem(COMMANDER_DATA_KEY);
   let loaded = storedData ? JSON.parse(storedData) : {};
-  
-  if (supabase) {
-    // Use maybeSingle() to avoid errors if the cloud is currently empty
-    const { data } = await supabase.from('mtg_state').select('data').eq('id', 'commander_data').maybeSingle();
-    if (data) loaded = data.data;
-  }
 
   const migrated = {};
   Object.entries(loaded).forEach(([name, value]) => {
@@ -158,22 +140,19 @@ async function loadCommanderData() {
   });
 }
 
-async function loadGames() {
+function loadGames() {
   const rawGames = JSON.parse(localStorage.getItem(STORAGE_KEY) || '[]');
-  if (supabase) {
-    const { data } = await supabase.from('mtg_state').select('data').eq('id', 'current_games').maybeSingle();
-    if (data) games = data.data;
-  }
-
   const normalised = normaliseGames(rawGames);
-  if (!supabase) games = normalised.games;
+  games = normalised.games;
   
   if (normalised.changed) saveGames();
-  await loadCommanderData();
+  loadCommanderData();
   
-  if (supabase) {
-    const { data } = await supabase.from('mtg_state').select('data').eq('id', 'rage_quits').maybeSingle();
-    if (data) rageQuits = data.data;
+  try {
+    const storedRage = localStorage.getItem(RAGE_QUIT_KEY);
+    rageQuits = storedRage ? JSON.parse(storedRage) : [];
+  } catch (e) {
+    rageQuits = [];
   }
 
   populateDataLists();
@@ -300,7 +279,8 @@ function populatePlayerDataLists() {
   }));
   const playerOptions = Array.from(playerNames).sort().map(name => `<option value="${escapeHtml(name)}">`).join('');
   seatFields.forEach(field => {
-    document.getElementById(`player-${field.key}-names-list`).innerHTML = playerOptions;
+    const list = document.getElementById(`player-${field.key}-names-list`);
+    if (list) list.innerHTML = playerOptions;
   });
 }
 
@@ -319,8 +299,10 @@ function populateCommanderDataLists() {
 
   const globalCommanderOptions = Array.from(commanders).sort().map(cmd => `<option value="${escapeHtml(cmd)}">`).join('');
   seatFields.forEach(field => {
-    document.getElementById(`commanders-${field.key}-list`).innerHTML = getCommanderOptionsForPlayer(
-      document.getElementById(`player-${field.key}-name`).value.trim(),
+    const nameInput = document.getElementById(`player-${field.key}-name`);
+    const list = document.getElementById(`commanders-${field.key}-list`);
+    if (list) list.innerHTML = getCommanderOptionsForPlayer(
+      nameInput ? nameInput.value.trim() : '',
       playerCommanderMap,
       globalCommanderOptions
     );
@@ -385,6 +367,7 @@ function validateGame(players) {
 
 function renderGameHistory(filterText = '') {
   const container = document.getElementById('game-history-list');
+  if (!container) return;
   container.innerHTML = '';
 
   if (games.length === 0) {
@@ -509,7 +492,7 @@ function calculateStats() {
         }
       });
 
-      if (!playerStats[playerKey]) playerStats[playerKey] = { ...emptyPlacementStats(), currentStreak: 0, maxStreak: 0 };
+      if (!playerStats[playerKey]) playerStats[playerKey] = { ...emptyPlacementStats(), currentStreak: 0, maxStreak: 0, giantSlays: 0 };
       if (!commanderStats[commanderKey]) commanderStats[commanderKey] = emptyPlacementStats();
       if (!seatStats[seatLabel]) seatStats[seatLabel] = { games: 0, wins: 0 };
       if (!pairStats[pairKey]) pairStats[pairKey] = { player: player.name, commander: player.commander, games: 0, wins: 0 };
@@ -546,7 +529,7 @@ function calculateStats() {
     // Capture streaks before this game's results are applied
     const preGameStreaks = {};
     game.players.forEach(p => {
-      preGameStreaks[p.name] = playerStats[p.name].currentStreak;
+      preGameStreaks[p.name] = playerStats[p.name]?.currentStreak || 0;
     });
 
     game.players.forEach(p => {
@@ -583,7 +566,7 @@ function renderStatCard(icon, label, value, subtitle, detailsHtml = '', extraCla
 function renderStatsDashboard(stats = calculateStats()) {
   const dashboard = document.getElementById('stats-dashboard');
   if (!games.length) {
-    dashboard.innerHTML = '<p>No games recorded yet.</p>';
+    if (dashboard) dashboard.innerHTML = '<p>No games recorded yet.</p>';
     return;
   }
 
@@ -607,8 +590,11 @@ function renderStatsDashboard(stats = calculateStats()) {
     Object.entries(targets).forEach(([cmdB, s]) => {
       // Use alphabetical sort to ensure A vs B and B vs A are counted as the same pair
       const pair = [cmdA, cmdB].sort();
-      if (s.games > rivalry.games) {
-        rivalry = { pair, games: s.games };
+      // To avoid double counting (A vs B and B vs A), only consider one direction
+      if (pair[0] === cmdA) {
+        if (s.games > rivalry.games) {
+          rivalry = { pair, games: s.games };
+        }
       }
     });
   });
@@ -657,14 +643,16 @@ function renderStatsDashboard(stats = calculateStats()) {
       `).join('')}
   `;
 
-  dashboard.innerHTML = `
-    ${renderStatCard('&#x1F3AE;', 'Total Games', games.length, 'Games stored')}
-    ${renderStatCard('&#x2694;&#xFE0F;', 'Classic Rivalry', rivalryLabel, rivalry.games > 0 ? `${rivalry.games} Encounters` : 'No data')}
-    ${renderStatCard('&#x1F525;', 'Current Hottest Streak', hottestPlayer ? escapeHtml(hottestPlayer[0]) : 'N/A', hottestPlayer ? `${hottestPlayer[1].currentStreak} Wins Row` : 'No active streaks', hottestPlayersDetails, hottestCardClass)}
-    ${renderStatCard('&#x1F3C6;', 'Top Player', topPlayer ? escapeHtml(topPlayer[0]) : 'N/A', `${topPlayer ? topPlayer[1].wins : 0} Wins`, topPlayersDetails)}
-    ${renderStatCard('&#x1F451;', 'Top Commander', topCommander ? escapeHtml(topCommander[0]) : 'N/A', `${topCommander ? topCommander[1].wins : 0} Wins`, topCommandersDetails)}
-    ${renderStatCard('&#x1F525;', 'Best Win Rate', bestCommander ? escapeHtml(bestCommander[0]) : 'N/A', bestCommander ? `${((bestCommander[1].wins / bestCommander[1].games) * 100).toFixed(0)}%` : 'Needs 5 games')}
-  `;
+  if (dashboard) {
+    dashboard.innerHTML = `
+      ${renderStatCard('&#x1F3AE;', 'Total Games', games.length, 'Games stored')}
+      ${renderStatCard('&#x2694;&#xFE0F;', 'Classic Rivalry', rivalryLabel, rivalry.games > 0 ? `${rivalry.games} Encounters` : 'No data')}
+      ${renderStatCard('&#x1F525;', 'Current Hottest Streak', hottestPlayer ? escapeHtml(hottestPlayer[0]) : 'N/A', hottestPlayer ? `${hottestPlayer[1].currentStreak} Wins Row` : 'No active streaks', hottestPlayersDetails, hottestCardClass)}
+      ${renderStatCard('&#x1F3C6;', 'Top Player', topPlayer ? escapeHtml(topPlayer[0]) : 'N/A', `${topPlayer ? topPlayer[1].wins : 0} Wins`, topPlayersDetails)}
+      ${renderStatCard('&#x1F451;', 'Top Commander', topCommander ? escapeHtml(topCommander[0]) : 'N/A', `${topCommander ? topCommander[1].wins : 0} Wins`, topCommandersDetails)}
+      ${renderStatCard('&#x1F525;', 'Best Win Rate', bestCommander ? escapeHtml(bestCommander[0]) : 'N/A', bestCommander ? `${((bestCommander[1].wins / bestCommander[1].games) * 100).toFixed(0)}%` : 'Needs 5 games')}
+    `;
+  }
 }
 
 function commanderCell(name) {
@@ -725,10 +713,6 @@ function renderStats() {
     destroyCharts();
     const chartGrid = document.getElementById('stats-charts');
     if (chartGrid) chartGrid.style.display = 'none';
-    document.getElementById('commander-stats-table-content').innerHTML = '';
-    document.getElementById('seat-advantage-table-content').innerHTML = '';
-    document.getElementById('color-statistics-table-content').innerHTML = '';
-    document.getElementById('pair-stats-table-content').innerHTML = '';
     setHtml('commander-stats-table-content', '');
     setHtml('seat-advantage-table-content', '');
     setHtml('color-statistics-table-content', '');
@@ -967,61 +951,68 @@ function openCommanderModal(commanderName) {
     .map(([opp, s]) => `<tr><td>${commanderCell(opp)}</td><td>${s.games}</td><td>${((s.winsAgainst/s.games)*100).toFixed(0)}%</td></tr>`)
     .join('') || '<tr><td colspan="3">No matchup data yet.</td></tr>';
 
-  document.getElementById('commander-modal-body').innerHTML = `
-    ${image ? `<img class="modal-art" src="${escapeHtml(image)}" alt="${escapeHtml(commanderName)}">` : '<div class="modal-art"></div>'}
-    <div class="modal-body-inner">
-      <h2 id="commander-modal-title">${escapeHtml(commanderName)}</h2>
-      <div class="modal-stats-grid">
-        <div class="modal-stat"><div class="modal-stat-label">Games Played</div><div class="modal-stat-value">${gamesPlayed}</div></div>
-        <div class="modal-stat"><div class="modal-stat-label">Wins</div><div class="modal-stat-value">${wins}</div></div>
-        <div class="modal-stat"><div class="modal-stat-label">Win Rate</div><div class="modal-stat-value">${gamesPlayed ? ((wins / gamesPlayed) * 100).toFixed(0) : 0}%</div></div>
-      </div>
-      <section>
-        <h3>Milestones</h3>
-        <div class="modal-list">${milestonesHtml}</div>
-      </section>
-      <div class="modal-stats-grid">
-        <div class="modal-stat" style="grid-column: 1 / -1; border-color: var(--chart-red);">
-          <div class="modal-stat-label">Top Nemesis</div>
-          <div class="modal-stat-value">${nemesisEntry ? commanderCell(nemesisEntry[0]) : 'None yet'}</div>
-          <div style="font-size:0.8rem; color:var(--muted-text);">${nemesisEntry ? `Wins only ${((nemesisEntry[1].winsAgainst/nemesisEntry[1].games)*100).toFixed(0)}% of the time vs this deck` : 'Play more games to find a rival'}</div>
+  const modalBody = document.getElementById('commander-modal-body');
+  if (modalBody) {
+    modalBody.innerHTML = `
+      ${image ? `<img class="modal-art" src="${escapeHtml(image)}" alt="${escapeHtml(commanderName)}">` : '<div class="modal-art"></div>'}
+      <div class="modal-body-inner">
+        <h2 id="commander-modal-title">${escapeHtml(commanderName)}</h2>
+        <div class="modal-stats-grid">
+          <div class="modal-stat"><div class="modal-stat-label">Games Played</div><div class="modal-stat-value">${gamesPlayed}</div></div>
+          <div class="modal-stat"><div class="modal-stat-label">Wins</div><div class="modal-stat-value">${wins}</div></div>
+          <div class="modal-stat"><div class="modal-stat-label">Win Rate</div><div class="modal-stat-value">${gamesPlayed ? ((wins / gamesPlayed) * 100).toFixed(0) : 0}%</div></div>
+        </div>
+        <section>
+          <h3>Milestones</h3>
+          <div class="modal-list">${milestonesHtml}</div>
+        </section>
+        <div class="modal-stats-grid">
+          <div class="modal-stat" style="grid-column: 1 / -1; border-color: var(--chart-red);">
+            <div class="modal-stat-label">Top Nemesis</div>
+            <div class="modal-stat-value">${nemesisEntry ? commanderCell(nemesisEntry[0]) : 'None yet'}</div>
+            <div style="font-size:0.8rem; color:var(--muted-text);">${nemesisEntry ? `Wins only ${((nemesisEntry[1].winsAgainst/nemesisEntry[1].games)*100).toFixed(0)}% of the time vs this deck` : 'Play more games to find a rival'}</div>
+          </div>
+        </div>
+        <section>
+          <h3>Colour Identity</h3>
+          <div class="modal-list">${colors.length ? colors.map(c => `<span class="modal-pill pill-${c}">${escapeHtml(colorNames[c] || c)}</span>`).join('') : '<span class="modal-pill">Unknown</span>'}</div>
+        </section>
+        <section>
+          <h3>Head-to-Head Matchups</h3>
+          <div class="stats-table-container">
+            <table><thead><tr><th>Opponent</th><th>Games</th><th>Performance</th></tr></thead>
+            <tbody>${matchupsHtml}</tbody></table>
+          </div>
+        </section>
+        <section>
+          <h3>Players</h3>
+          <div class="modal-list">${players.length ? players.map(player => `<span class="modal-pill player-link" data-player-detail="${escapeHtml(player)}">${escapeHtml(player)}</span>`).join('') : '<span class="modal-pill">No games yet</span>'}</div>
+        </section>
+        <section>
+          <h3>Recent Games</h3>
+          <table><tbody>${sortedAppearances.slice(0, 5).map(item => `<tr><td>${escapeHtml(formatDateUK(item.date))}</td><td><span class="player-link" data-player-detail="${escapeHtml(item.player)}">${escapeHtml(item.player)}</span></td><td>${item.isWinner ? '🏆 Win' : 'Loss'}</td></tr>`).join('') || '<tr><td>No appearances yet.</td></tr>'}</tbody></table>
+        </section>
+        <div class="modal-date-grid">
+          <div class="modal-stat"><div class="modal-stat-label">First Played</div><div class="modal-stat-value">${escapeHtml(formatDateUK(firstPlayed))}</div></div>
+          <div class="modal-stat"><div class="modal-stat-label">Last Played</div><div class="modal-stat-value">${escapeHtml(formatDateUK(lastPlayed))}</div></div>
         </div>
       </div>
-      <section>
-        <h3>Colour Identity</h3>
-        <div class="modal-list">${colors.length ? colors.map(c => `<span class="modal-pill pill-${c}">${escapeHtml(colorNames[c] || c)}</span>`).join('') : '<span class="modal-pill">Unknown</span>'}</div>
-      </section>
-      <section>
-        <h3>Head-to-Head Matchups</h3>
-        <div class="stats-table-container">
-          <table><thead><tr><th>Opponent</th><th>Games</th><th>Performance</th></tr></thead>
-          <tbody>${matchupsHtml}</tbody></table>
-        </div>
-      </section>
-      <section>
-        <h3>Players</h3>
-        <div class="modal-list">${players.length ? players.map(player => `<span class="modal-pill player-link" data-player-detail="${escapeHtml(player)}">${escapeHtml(player)}</span>`).join('') : '<span class="modal-pill">No games yet</span>'}</div>
-      </section>
-      <section>
-        <h3>Recent Games</h3>
-        <table><tbody>${sortedAppearances.slice(0, 5).map(item => `<tr><td>${escapeHtml(formatDateUK(item.date))}</td><td><span class="player-link" data-player-detail="${escapeHtml(item.player)}">${escapeHtml(item.player)}</span></td><td>${item.isWinner ? '🏆 Win' : 'Loss'}</td></tr>`).join('') || '<tr><td>No appearances yet.</td></tr>'}</tbody></table>
-      </section>
-      <div class="modal-date-grid">
-        <div class="modal-stat"><div class="modal-stat-label">First Played</div><div class="modal-stat-value">${escapeHtml(formatDateUK(firstPlayed))}</div></div>
-        <div class="modal-stat"><div class="modal-stat-label">Last Played</div><div class="modal-stat-value">${escapeHtml(formatDateUK(lastPlayed))}</div></div>
-      </div>
-    </div>
-  `;
+    `;
+  }
 
   const modal = document.getElementById('commander-modal');
-  modal.classList.add('is-open');
-  modal.setAttribute('aria-hidden', 'false');
+  if (modal) {
+    modal.classList.add('is-open');
+    modal.setAttribute('aria-hidden', 'false');
+  }
 }
 
 function closeCommanderModal() {
   const modal = document.getElementById('commander-modal');
-  modal.classList.remove('is-open');
-  modal.setAttribute('aria-hidden', 'true');
+  if (modal) {
+    modal.classList.remove('is-open');
+    modal.setAttribute('aria-hidden', 'true');
+  }
 }
 
 function renderRageQuits() {
@@ -1033,14 +1024,10 @@ function renderRageQuits() {
     const latestSalt = rageQuits.reduce((latest, current) => {
       return new Date(current.date) > new Date(latest.date) ? current : latest;
     }, rageQuits[0]);
-    
-    const today = new Date();
-    today.setHours(0,0,0,0);
-    const saltDate = new Date(latestSalt.date);
-    saltDate.setHours(0,0,0,0);
-    
-    const diffTime = Math.abs(today - saltDate);
-    const diffDays = Math.floor(diffTime / (1000 * 60 * 60 * 24));
+    const today = new Date(); today.setHours(0,0,0,0);
+    const saltDate = new Date(latestSalt.date); saltDate.setHours(0,0,0,0);
+    const diffDays = Math.floor(Math.abs(today - saltDate) / (1000 * 60 * 60 * 24));
+
     daysCountEl.textContent = diffDays;
     daysCountEl.style.color = diffDays > 7 ? 'var(--chart-green)' : 'var(--chart-red)';
   }
@@ -1115,71 +1102,76 @@ function openPlayerModal(playerName) {
     return vals[i] > 0;
   }).join('');
 
-  document.getElementById('commander-modal-body').innerHTML = `
-    <div class="modal-body-inner">
-      <h2 id="commander-modal-title">${escapeHtml(playerName)}</h2>
-      <div class="modal-stats-grid">
-        <div class="modal-stat"><div class="modal-stat-label">Total Games</div><div class="modal-stat-value">${stats.games}</div></div>
-        <div class="modal-stat"><div class="modal-stat-label">Total Wins</div><div class="modal-stat-value">${stats.wins}</div></div>
-        <div class="modal-stat"><div class="modal-stat-label">Win Rate</div><div class="modal-stat-value">${stats.games ? ((stats.wins / stats.games) * 100).toFixed(0) : 0}%</div></div>
-        <div class="modal-stat"><div class="modal-stat-label">Longest Streak</div><div class="modal-stat-value">${stats.maxStreak} Wins</div></div>
-        <div class="modal-stat"><div class="modal-stat-label">Current Streak</div><div class="modal-stat-value">${stats.currentStreak} Wins</div></div>
+  const modalBody = document.getElementById('commander-modal-body'); // Using commander-modal-body for player details
+  if (modalBody) {
+    modalBody.innerHTML = `
+      <div class="modal-body-inner">
+        <h2 id="commander-modal-title">${escapeHtml(playerName)}</h2>
+        <div class="modal-stats-grid">
+          <div class="modal-stat"><div class="modal-stat-label">Total Games</div><div class="modal-stat-value">${stats.games}</div></div>
+          <div class="modal-stat"><div class="modal-stat-label">Total Wins</div><div class="modal-stat-value">${stats.wins}</div></div>
+          <div class="modal-stat"><div class="modal-stat-label">Win Rate</div><div class="modal-stat-value">${stats.games ? ((stats.wins / stats.games) * 100).toFixed(0) : 0}%</div></div>
+          <div class="modal-stat"><div class="modal-stat-label">Longest Streak</div><div class="modal-stat-value">${stats.maxStreak} Wins</div></div>
+          <div class="modal-stat"><div class="modal-stat-label">Current Streak</div><div class="modal-stat-value">${stats.currentStreak} Wins</div></div>
+        </div>
+        <div class="modal-stats-grid">
+          <div class="modal-stat" style="grid-column: 1 / -1; border-color: var(--chart-red);">
+            <div class="modal-stat-label">Personal Nemesis</div>
+            <div class="modal-stat-value">${nemesisName ? `<span class="player-link" data-player-detail="${escapeHtml(nemesisName)}">${escapeHtml(nemesisName)}</span>` : 'None yet'}</div>
+            <div style="font-size:0.8rem; color:var(--muted-text);">${nemesisEntry ? `They win ${((nemesisEntry[1].opponentWins/nemesisEntry[1].gamesTogether)*100).toFixed(0)}% of games you play together` : 'Play more games to find your rival'}</div>
+          </div>
+        </div>
+        <section>
+          <h3>Achievements</h3>
+          <div class="modal-list">${achievementsHtml || '<p style="color:var(--muted-text); font-size:0.9rem;">Play more games to reveal achievements!</p>'}</div>
+        </section>
+        <section>
+          <h3>Master of the Table</h3>
+          <div class="modal-date-grid">
+            <div class="modal-stat"><div class="modal-stat-label">Seat 1 Wins</div><div class="modal-stat-value">${seatWinsArr[0]}</div></div>
+            <div class="modal-stat"><div class="modal-stat-label">Seat 2 Wins</div><div class="modal-stat-value">${seatWinsArr[1]}</div></div>
+            <div class="modal-stat"><div class="modal-stat-label">Seat 3 Wins</div><div class="modal-stat-value">${seatWinsArr[2]}</div></div>
+            <div class="modal-stat"><div class="modal-stat-label">Seat 4 Wins</div><div class="modal-stat-value">${seatWinsArr[3]}</div></div>
+          </div>
+        </section>
+        <section>
+          <h3>Favorite Commanders</h3>
+          <div class="modal-list">
+            ${favCommanders.map(([cmd, count]) => `
+              <span class="modal-pill commander-link" data-commander-detail="${escapeHtml(cmd)}">
+                ${escapeHtml(cmd)} (${count})
+              </span>
+            `).join('') || '<span class="modal-pill">None</span>'}
+          </div>
+        </section>
+        <section>
+          <h3>Recent Performance</h3>
+          <div class="stats-table-container">
+            <table>
+              <thead>
+                <tr><th>Date</th><th>Commander</th><th>Result</th></tr>
+              </thead>
+              <tbody>
+                ${sortedHistory.slice(0, 10).map(item => `
+                  <tr>
+                    <td>${escapeHtml(formatDateUK(item.date))}</td>
+                    <td><span class="commander-link" data-commander-detail="${escapeHtml(item.commander)}">${escapeHtml(item.commander)}</span></td>
+                    <td>${item.isWinner ? '🏆 Win' : 'Loss'}</td>
+                  </tr>
+                `).join('') || '<tr><td colspan="3">No games played yet.</td></tr>'}
+              </tbody>
+            </table>
+          </div>
+        </section>
       </div>
-      <div class="modal-stats-grid">
-        <div class="modal-stat" style="grid-column: 1 / -1; border-color: var(--chart-red);">
-          <div class="modal-stat-label">Personal Nemesis</div>
-          <div class="modal-stat-value">${nemesisEntry ? `<span class="player-link" data-player-detail="${escapeHtml(nemesisEntry[0])}">${escapeHtml(nemesisEntry[0])}</span>` : 'None yet'}</div>
-          <div style="font-size:0.8rem; color:var(--muted-text);">${nemesisEntry ? `They win ${((nemesisEntry[1].opponentWins/nemesisEntry[1].gamesTogether)*100).toFixed(0)}% of games you play together` : 'Play more games to find your rival'}</div>
-        </div>
-      </div>
-      <section>
-        <h3>Achievements</h3>
-        <div class="modal-list">${achievementsHtml || '<p style="color:var(--muted-text); font-size:0.9rem;">Play more games to reveal achievements!</p>'}</div>
-      </section>
-      <section>
-        <h3>Master of the Table</h3>
-        <div class="modal-date-grid">
-          <div class="modal-stat"><div class="modal-stat-label">Seat 1 Wins</div><div class="modal-stat-value">${seatWinsArr[0]}</div></div>
-          <div class="modal-stat"><div class="modal-stat-label">Seat 2 Wins</div><div class="modal-stat-value">${seatWinsArr[1]}</div></div>
-          <div class="modal-stat"><div class="modal-stat-label">Seat 3 Wins</div><div class="modal-stat-value">${seatWinsArr[2]}</div></div>
-          <div class="modal-stat"><div class="modal-stat-label">Seat 4 Wins</div><div class="modal-stat-value">${seatWinsArr[3]}</div></div>
-        </div>
-      </section>
-      <section>
-        <h3>Favorite Commanders</h3>
-        <div class="modal-list">
-          ${favCommanders.map(([cmd, count]) => `
-            <span class="modal-pill commander-link" data-commander-detail="${escapeHtml(cmd)}">
-              ${escapeHtml(cmd)} (${count})
-            </span>
-          `).join('') || '<span class="modal-pill">None</span>'}
-        </div>
-      </section>
-      <section>
-        <h3>Recent Performance</h3>
-        <div class="stats-table-container">
-          <table>
-            <thead>
-              <tr><th>Date</th><th>Commander</th><th>Result</th></tr>
-            </thead>
-            <tbody>
-              ${sortedHistory.slice(0, 10).map(item => `
-                <tr>
-                  <td>${escapeHtml(formatDateUK(item.date))}</td>
-                  <td><span class="commander-link" data-commander-detail="${escapeHtml(item.commander)}">${escapeHtml(item.commander)}</span></td>
-                  <td>${item.isWinner ? '🏆 Win' : 'Loss'}</td>
-                </tr>
-              `).join('') || '<tr><td colspan="3">No games played yet.</td></tr>'}
-            </tbody>
-          </table>
-        </div>
-      </section>
-    </div>
-  `;
+    `;
+  }
 
-  const modal = document.getElementById('commander-modal');
-  modal.classList.add('is-open');
-  modal.setAttribute('aria-hidden', 'false');
+  const modal = document.getElementById('commander-modal'); // Re-using commander modal for player details
+  if (modal) {
+    modal.classList.add('is-open');
+    modal.setAttribute('aria-hidden', 'false');
+  }
 }
 
 function initTheme() {
@@ -1215,7 +1207,7 @@ function updateBountyIcons() {
   });
 }
 
-window.addEventListener('load', async () => {
+window.addEventListener('load', () => {
   try {
     const today = new Date().toISOString().split('T')[0];
     const gameDateInput = document.getElementById('game-date');
@@ -1229,47 +1221,20 @@ window.addEventListener('load', async () => {
       if (el) el.addEventListener(event, callback);
     };
 
-    // --- ATTACH UI CONTROLS FIRST (Reliability) ---
-    
-    safeAddListener('admin-unlock-btn', 'click', () => {
-      if (isAdmin) {
-        isAdmin = false;
-        localStorage.setItem('mtg_admin_active', 'false');
-      } else {
-        const entry = prompt('Enter Master Passphrase:');
-        if (entry === ADMIN_PASSPHRASE) {
-          isAdmin = true;
-          localStorage.setItem('mtg_admin_active', 'true');
-        } else if (entry !== null) {
-          alert('Incorrect passphrase.');
-        }
-      }
-      updateAdminVisibility();
-    });
-
     safeAddListener('theme-toggle', 'click', toggleTheme);
 
-    // Winner Toggle Listener
     document.querySelectorAll('.winner-toggle').forEach(button => {
       button.addEventListener('click', (e) => {
         const btn = e.target.closest('.winner-toggle');
-        document.querySelectorAll('.winner-toggle').forEach(btn => btn.classList.remove('active'));
+        document.querySelectorAll('.winner-toggle').forEach(b => b.classList.remove('active'));
         if (btn) btn.classList.add('active');
       });
     });
 
-    // --- LOAD DATA ---
     initTheme();
-    await loadGames();
-
-    updateAdminVisibility();
+    loadGames();
 
     const autocompleteTimers = {};
-
-    const safeAddListener = (id, event, callback) => {
-      const el = document.getElementById(id);
-      if (el) el.addEventListener(event, callback);
-    };
 
     seatFields.forEach(field => {
       safeAddListener(`player-${field.key}-name`, 'input', () => {
@@ -1280,21 +1245,13 @@ window.addEventListener('load', async () => {
       safeAddListener(`commander-${field.key}`, 'input', async (e) => {
         const query = e.target.value;
         clearTimeout(autocompleteTimers[field.key]);
-        
-        if (query.length < 3) {
-          populateCommanderDataLists();
-          return;
-        }
-
+        if (query.length < 3) { populateCommanderDataLists(); return; }
         autocompleteTimers[field.key] = setTimeout(async () => {
           const suggestions = await fetchScryfallAutocomplete(query);
           if (suggestions.length > 0) {
             const list = document.getElementById(`commanders-${field.key}-list`);
             const currentHtml = list.innerHTML;
-            const newOptions = suggestions
-              .filter(name => !currentHtml.includes(`value="${escapeHtml(name)}"`))
-              .map(name => `<option value="${escapeHtml(name)}">`)
-              .join('');
+            const newOptions = suggestions.filter(name => !currentHtml.includes(`value="${escapeHtml(name)}"`)).map(name => `<option value="${escapeHtml(name)}">`).join('');
             list.innerHTML += newOptions;
           }
         }, 300);
@@ -1302,369 +1259,127 @@ window.addEventListener('load', async () => {
 
       safeAddListener(`commander-${field.key}`, 'change', async () => {
         const input = document.getElementById(`commander-${field.key}`);
-        const commanderName = titleCase(input.value);
-        input.value = commanderName;
-        if (commanderName && (!commanderData[commanderName] || !commanderData[commanderName].image || !commanderData[commanderName].colorsFetched)) {
-          await fetchCommanderImage(commanderName);
-          renderCommanderLibrary();
-          renderStats();
-          updatePortraitPreview(field.key);
+        const name = titleCase(input.value);
+        input.value = name;
+        if (name && (!commanderData[name] || !commanderData[name].image)) {
+          await fetchCommanderImage(name);
+          renderCommanderLibrary(); renderStats(); updatePortraitPreview(field.key);
         }
         updatePortraitPreview(field.key);
       });
     });
 
-    // Winner Toggle Listener
-    document.querySelectorAll('.winner-toggle').forEach(button => {
-      button.addEventListener('click', (e) => {
-        const btn = e.target.closest('.winner-toggle');
-        document.querySelectorAll('.winner-toggle').forEach(btn => btn.classList.remove('active'));
-        if (btn) btn.classList.add('active');
-      });
-    });
-
-    safeAddListener('theme-toggle', 'click', toggleTheme);
-
-    // Navigation logic
     const navItems = document.querySelectorAll('.nav-item');
     const tabContents = document.querySelectorAll('.tab-content');
-
     navItems.forEach(item => {
       item.addEventListener('click', () => {
         const targetTab = item.getAttribute('data-tab');
-        
-        // Update Nav Buttons
         navItems.forEach(nav => nav.classList.remove('active'));
         item.classList.add('active');
-
-        // Update Content
         tabContents.forEach(content => {
           content.classList.remove('active');
           if (content.id === targetTab) content.classList.add('active');
         });
-
-        // Refresh stats/charts if switching to stats tab
         if (targetTab === 'tab-stats') renderStats();
         if (targetTab === 'tab-history') renderGameHistory();
         if (targetTab === 'tab-rage-quits') renderRageQuits();
       });
     });
 
-    safeAddListener('history-search', 'input', (e) => {
-      renderGameHistory(e.target.value);
-    });
-
-    safeAddListener('commander-stats-search', 'input', (e) => {
-      commanderSearchQuery = e.target.value;
-      renderStats();
-    });
-
-    safeAddListener('color-stats-search', 'input', (e) => {
-      colorSearchQuery = e.target.value;
-      renderStats();
-    });
-
-    safeAddListener('pair-stats-search', 'input', (e) => {
-      pairSearchQuery = e.target.value;
-      renderStats();
-    });
-
-    safeAddListener('library-search', 'input', (e) => {
-      renderCommanderLibrary(e.target.value);
-    });
-
-    safeAddListener('toggle-pair-rate', 'click', () => {
-      pairSortMode = 'rate';
-      document.getElementById('toggle-pair-rate').classList.add('active');
-      document.getElementById('toggle-pair-games').classList.remove('active');
-      renderStats();
-    });
-
-    safeAddListener('toggle-pair-games', 'click', () => {
-      pairSortMode = 'games';
-      document.getElementById('toggle-pair-games').classList.add('active');
-      document.getElementById('toggle-pair-rate').classList.remove('active');
-      renderStats();
-    });
-
+    safeAddListener('history-search', 'input', (e) => renderGameHistory(e.target.value));
+    safeAddListener('commander-stats-search', 'input', (e) => { commanderSearchQuery = e.target.value; renderStats(); });
+    safeAddListener('color-stats-search', 'input', (e) => { colorSearchQuery = e.target.value; renderStats(); });
+    safeAddListener('pair-stats-search', 'input', (e) => { pairSearchQuery = e.target.value; renderStats(); });
+    safeAddListener('library-search', 'input', (e) => renderCommanderLibrary(e.target.value));
+    safeAddListener('toggle-pair-rate', 'click', () => { pairSortMode = 'rate'; document.getElementById('toggle-pair-rate').classList.add('active'); document.getElementById('toggle-pair-games').classList.remove('active'); renderStats(); });
+    safeAddListener('toggle-pair-games', 'click', () => { pairSortMode = 'games'; document.getElementById('toggle-pair-games').classList.add('active'); document.getElementById('toggle-pair-rate').classList.remove('active'); renderStats(); });
     safeAddListener('export-data-btn', 'click', exportData);
-    safeAddListener('import-data-btn', 'click', () => {
-      document.getElementById('import-file-input').click();
-    });
+    safeAddListener('import-data-btn', 'click', () => document.getElementById('import-file-input').click());
     safeAddListener('import-file-input', 'change', (e) => {
-      const file = e.target.files[0];
-      if (!file) return;
-      const reader = new FileReader();
-      reader.onload = (event) => importData(event.target.result);
-      reader.readAsText(file);
+      const file = e.target.files[0]; if (!file) return;
+      const reader = new FileReader(); reader.onload = (event) => importData(event.target.result); reader.readAsText(file);
+    });
+    safeAddListener('toggle-weekly', 'click', () => { chartViewMode = 'weekly'; document.getElementById('toggle-weekly').classList.add('active'); document.getElementById('toggle-monthly').classList.remove('active'); renderStats(); });
+    safeAddListener('toggle-monthly', 'click', () => { chartViewMode = 'monthly'; document.getElementById('toggle-monthly').classList.add('active'); document.getElementById('toggle-weekly').classList.remove('active'); renderStats(); });
+
+    safeAddListener('save-game', 'click', event => {
+      event.preventDefault();
+      const validPlayers = validateGame(getSeatPlayers());
+      if (!validPlayers) return;
+      const game = { date: document.getElementById('game-date').value, players: validPlayers };
+      if (currentGame.index != null) { games[currentGame.index] = game; currentGame.index = null; }
+      else { games.push(game); }
+      games.sort((a, b) => a.date.localeCompare(b.date));
+      saveGames(); saveCommanderData(); populateDataLists(); renderCommanderLibrary(); renderGameHistory(); renderStats(); resetCurrentGame();
     });
 
-    safeAddListener('toggle-weekly', 'click', () => {
-      chartViewMode = 'weekly';
-      document.getElementById('toggle-weekly').classList.add('active');
-      document.getElementById('toggle-monthly').classList.remove('active');
-      const title = document.getElementById('main-chart-title');
-      if (title) title.textContent = 'Weekly Games';
-      renderStats();
+    safeAddListener('cancel-edit', 'click', () => { currentGame.index = null; resetCurrentGame(); });
+    safeAddListener('clear-game', 'click', () => { if (confirm('Clear current entries?')) resetCurrentGame(); });
+
+    safeAddListener('game-history-list', 'click', event => {
+      const c = event.target.closest('[data-commander-detail]'); if (c) return openCommanderModal(c.dataset.commanderDetail);
+      const p = event.target.closest('[data-player-detail]'); if (p) return openPlayerModal(p.dataset.playerDetail);
+      if (event.target.matches('.delete-game')) {
+        const index = Number(event.target.dataset.index);
+        if (confirm('Delete entry?')) { games.splice(index, 1); saveGames(); renderGameHistory(); renderStats(); }
+      }
+      if (event.target.matches('.edit-game')) {
+        const index = Number(event.target.dataset.index); const game = games[index];
+        resetCurrentGame(); currentGame.index = index; document.getElementById('game-date').value = game.date;
+        game.players.forEach(p => {
+          const key = keyForSeat(p.seat);
+          document.getElementById(`player-${key}-name`).value = p.name;
+          document.getElementById(`commander-${key}`).value = p.commander;
+          if (p.isWinner) document.querySelector(`.winner-toggle[data-seat-key="${key}"]`).classList.add('active');
+          updatePortraitPreview(key);
+        });
+        document.querySelector('[data-tab="tab-record"]').click();
+      }
     });
-    safeAddListener('toggle-monthly', 'click', () => {
-      chartViewMode = 'monthly';
-      document.getElementById('toggle-monthly').classList.add('active');
-      document.getElementById('toggle-weekly').classList.remove('active');
-      const title = document.getElementById('main-chart-title');
-      if (title) title.textContent = 'Monthly Games';
-      renderStats();
+
+    safeAddListener('commander-library', 'click', event => {
+      const c = event.target.closest('[data-commander-detail]'); if (c) return openCommanderModal(c.dataset.commanderDetail);
+      if (event.target.matches('.delete-commander-image')) {
+        const name = event.target.dataset.commander; if (confirm(`Delete art for ${name}?`)) { delete commanderData[name]; saveCommanderData(); renderCommanderLibrary(); }
+      }
     });
-  } catch (error) {
-    console.warn("App initialized with some missing elements or data issues:", error);
-  }
-});
 
-document.getElementById('save-game').addEventListener('click', event => {
-  event.preventDefault();
-  const validPlayers = validateGame(getSeatPlayers());
-  if (!validPlayers) return;
-
-  const game = { date: document.getElementById('game-date').value, players: validPlayers };
-  if (currentGame.index != null) {
-    games[currentGame.index] = game;
-    currentGame.index = null;
-  } else {
-    games.push(game);
-  }
-
-  // Sort games chronologically by date
-  games.sort((a, b) => a.date.localeCompare(b.date));
-
-  saveGames();
-  saveCommanderData();
-  populateDataLists();
-  renderCommanderLibrary();
-  renderGameHistory();
-  renderStats();
-  resetCurrentGame();
-});
-
-document.getElementById('cancel-edit').addEventListener('click', event => {
-  event.preventDefault();
-  currentGame.index = null;
-  resetCurrentGame();
-});
-
-document.getElementById('clear-game').addEventListener('click', event => {
-  event.preventDefault();
-  if (confirm('Clear all current entries for this game?')) {
-    currentGame.index = null;
-    resetCurrentGame();
-  }
-});
-
-document.getElementById('game-history-list').addEventListener('click', event => {
-  const commanderTarget = event.target.closest('[data-commander-detail]');
-  if (commanderTarget) {
-    openCommanderModal(commanderTarget.dataset.commanderDetail);
-    return;
-  }
-
-  const playerTarget = event.target.closest('[data-player-detail]');
-  if (playerTarget) {
-    openPlayerModal(playerTarget.dataset.playerDetail);
-    return;
-  }
-
-  if (event.target.matches('.delete-game')) {
-    const index = Number(event.target.dataset.index);
-    if (confirm('Delete this game entry?')) {
-      games.splice(index, 1);
-      saveGames();
-      populateDataLists();
-      renderGameHistory();
-      renderStats();
-    }
-  }
-
-  if (event.target.matches('.edit-game')) {
-    const index = Number(event.target.dataset.index);
-    const game = games[index];
-    resetCurrentGame();
-    currentGame.index = index;
-
-    document.getElementById('game-date').value = game.date;
-    game.players.forEach(player => {
-      const key = keyForSeat(player.seat);
-      document.getElementById(`player-${key}-name`).value = player.name;
-      document.getElementById(`commander-${key}`).value = player.commander;
-      if (player.isWinner) document.querySelector(`.winner-toggle[data-seat-key="${key}"]`).classList.add('active');
-      updatePortraitPreview(key);
-    });
-    document.getElementById('edit-mode').textContent = 'Editing game entry';
-    document.getElementById('edit-mode').style.display = 'block';
-    document.getElementById('cancel-edit').style.display = 'inline-block';
-
-    // Switch to Record Game tab
-    document.querySelectorAll('.nav-item').forEach(nav => {
-      nav.classList.toggle('active', nav.getAttribute('data-tab') === 'tab-record');
-    });
-    document.querySelectorAll('.tab-content').forEach(content => {
-      content.classList.toggle('active', content.id === 'tab-record');
-    });
-    window.scrollTo({ top: 0, behavior: 'smooth' });
-  }
-});
-
-document.getElementById('commander-library').addEventListener('click', event => {
-  const commanderTarget = event.target.closest('[data-commander-detail]');
-  if (commanderTarget) {
-    openCommanderModal(commanderTarget.dataset.commanderDetail);
-    return;
-  }
-
-  if (event.target.matches('.delete-commander-image')) {
-    const commanderName = event.target.dataset.commander;
-    if (confirm(`Delete portrait and color data for ${commanderName}?`)) {
-      delete commanderData[commanderName];
-      saveCommanderData();
-      renderCommanderLibrary();
-      renderStats();
-    }
-  }
-});
-
-const rageQuitBtn = document.getElementById('record-rage-quit');
-if (rageQuitBtn) {
-  rageQuitBtn.addEventListener('click', () => {
-    const reasonInput = document.getElementById('rage-quit-reason');
-    const dateInput = document.getElementById('rage-quit-date');
-    const reason = reasonInput.value.trim();
-    const date = dateInput.value;
-
-    if (currentRageQuitIndex !== null) {
-      rageQuits[currentRageQuitIndex].reason = reason;
-      rageQuits[currentRageQuitIndex].date = date;
-      currentRageQuitIndex = null;
-      rageQuitBtn.textContent = 'RECORD RAGE QUIT';
-      document.getElementById('cancel-rage-edit').style.display = 'none';
-    } else {
-      rageQuits.push({ date, reason });
-    }
-
-    localStorage.setItem(RAGE_QUIT_KEY, JSON.stringify(rageQuits));
-    reasonInput.value = '';
-    dateInput.value = new Date().toISOString().split('T')[0];
-    renderRageQuits();
-  });
-}
-
-document.getElementById('cancel-rage-edit').addEventListener('click', () => {
-  currentRageQuitIndex = null;
-  document.getElementById('rage-quit-reason').value = '';
-  document.getElementById('rage-quit-date').value = new Date().toISOString().split('T')[0];
-  document.getElementById('record-rage-quit').textContent = 'RECORD RAGE QUIT';
-  document.getElementById('cancel-rage-edit').style.display = 'none';
-});
-
-document.getElementById('rage-quit-history-list').addEventListener('click', event => {
-  if (event.target.matches('.delete-rage-quit')) {
-    const index = Number(event.target.dataset.index);
-    if (confirm('Delete this legendary salt record?')) {
-      rageQuits.splice(index, 1);
-      currentRageQuitIndex = null;
-      document.getElementById('rage-quit-reason').value = '';
-      document.getElementById('rage-quit-date').value = new Date().toISOString().split('T')[0];
-      document.getElementById('record-rage-quit').textContent = 'RECORD RAGE QUIT';
-      document.getElementById('cancel-rage-edit').style.display = 'none';
+    safeAddListener('record-rage-quit', 'click', () => {
+      const rInput = document.getElementById('rage-quit-reason'); const dInput = document.getElementById('rage-quit-date');
+      const reason = rInput ? rInput.value.trim() : ''; const date = dInput ? dInput.value : '';
+      if (currentRageQuitIndex !== null) { rageQuits[currentRageQuitIndex] = { date, reason }; currentRageQuitIndex = null; }
+      else { rageQuits.push({ date, reason }); }
       localStorage.setItem(RAGE_QUIT_KEY, JSON.stringify(rageQuits));
-      renderRageQuits();
-    }
-  }
-  if (event.target.matches('.edit-rage-quit')) {
-    const index = Number(event.target.dataset.index);
-    const rq = rageQuits[index];
-    document.getElementById('rage-quit-reason').value = rq.reason;
-    document.getElementById('rage-quit-date').value = rq.date;
-    currentRageQuitIndex = index;
-    document.getElementById('record-rage-quit').textContent = 'SAVE EDITS';
-    document.getElementById('cancel-rage-edit').style.display = 'block';
-    document.getElementById('rage-quit-reason').focus();
-  }
+      if (rInput) rInput.value = ''; renderRageQuits();
+    });
+
+    safeAddListener('stats-dashboard', 'click', event => {
+      const p = event.target.closest('[data-player-detail]'); if (p) return openPlayerModal(p.dataset.playerDetail);
+      const c = event.target.closest('[data-commander-detail]'); if (c) return openCommanderModal(c.dataset.commanderDetail);
+    });
+
+    safeAddListener('commander-modal-close', 'click', closeCommanderModal);
+    safeAddListener('commander-modal', 'click', e => { if (e.target.id === 'commander-modal') closeCommanderModal(); });
+    document.addEventListener('keydown', e => { if (e.key === 'Escape') closeCommanderModal(); });
+
+  } catch (err) { console.error("Init failed:", err); }
 });
 
-document.getElementById('stats-dashboard').addEventListener('click', event => {
-  const playerTarget = event.target.closest('[data-player-detail]');
-  if (playerTarget) {
-    openPlayerModal(playerTarget.dataset.playerDetail);
-    return;
-  }
-  const commanderTarget = event.target.closest('[data-commander-detail]');
-  if (commanderTarget) {
-    openCommanderModal(commanderTarget.dataset.commanderDetail);
-  }
-});
-
-document.getElementById('stats-tables').addEventListener('click', event => {
-  const commanderTarget = event.target.closest('[data-commander-detail]');
-  if (commanderTarget) openCommanderModal(commanderTarget.dataset.commanderDetail);
-
-  const playerTarget = event.target.closest('[data-player-detail]');
-  if (playerTarget) openPlayerModal(playerTarget.dataset.playerDetail);
-});
-
-document.getElementById('commander-modal-close').addEventListener('click', closeCommanderModal);
-document.getElementById('commander-modal').addEventListener('click', event => {
-  const commanderTarget = event.target.closest('[data-commander-detail]');
-  if (commanderTarget) openCommanderModal(commanderTarget.dataset.commanderDetail);
-
-  const playerTarget = event.target.closest('[data-player-detail]');
-  if (playerTarget) openPlayerModal(playerTarget.dataset.playerDetail);
-
-  if (event.target.id === 'commander-modal') closeCommanderModal();
-});
-document.addEventListener('keydown', event => {
-  if (event.key === 'Escape') closeCommanderModal();
-});
-
-/**
- * EXPORT/IMPORT LOGIC
- * These can be mapped to buttons in the UI for data backup.
- */
 function exportData() {
-  const data = {
-    games,
-    commanderData,
-    rageQuits,
-    exportDate: new Date().toISOString()
-  };
+  const data = { games, commanderData, rageQuits, exportDate: new Date().toISOString() };
   const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
   const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = `mtg_tracker_backup_${data.exportDate.split('T')[0]}.json`;
-  a.click();
-  URL.revokeObjectURL(url);
+  const a = document.createElement('a'); a.href = url; a.download = `mtg_backup.json`; a.click(); URL.revokeObjectURL(url);
 }
 
 function importData(jsonString) {
   try {
     const data = JSON.parse(jsonString);
-    if (!data.games || !Array.isArray(data.games)) throw new Error("Invalid format");
-    
-    if (confirm(`Import ${data.games.length} games? This will overwrite your current local data.`)) {
-      games = data.games;
-      // Ensure imported games are sorted by date
-      games.sort((a, b) => a.date.localeCompare(b.date));
-      commanderData = data.commanderData || {};
-      rageQuits = data.rageQuits || [];
-      
-      // Ensure we wait for the cloud save to finish before reloading
-      await saveGames();
-      await saveCommanderData();
-      localStorage.setItem(RAGE_QUIT_KEY, JSON.stringify(rageQuits));
-      if (supabase) {
-        await supabase.from('mtg_state').upsert({ id: 'rage_quits', data: rageQuits });
-      }
-      location.reload(); // Refresh to re-initialize everything
+    if (confirm(`Import ${data.games.length} games?`)) {
+      games = data.games; games.sort((a, b) => a.date.localeCompare(b.date));
+      commanderData = data.commanderData || {}; rageQuits = data.rageQuits || [];
+      saveGames(); saveCommanderData(); localStorage.setItem(RAGE_QUIT_KEY, JSON.stringify(rageQuits));
+      location.reload();
     }
-  } catch (e) {
-    alert("Failed to import data: " + e.message);
-  }
+  } catch (e) { alert("Failed: " + e.message); }
 }
