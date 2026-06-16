@@ -1,0 +1,1362 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MTG Game Tracker</title>
+    <style>
+      :root {
+        --bg-color: #f8fafc;
+        --card-bg: #ffffff;
+        --header-text: #0f172a;
+        --body-text: #1e293b;
+        --muted-text: #64748b;
+        --border-color: #e2e8f0;
+        --input-bg: #fcfcfd;
+        --nav-bg: #f1f5f9;
+        --accent-blue: #2563eb;
+        --accent-blue-hover: #1d4ed8;
+        --hover-bg: #f1f5f9;
+        --chart-green: #22c55e; /* Emerald 500 */
+        --chart-red: #ef4444; /* Red 500 */
+        --chart-red-alpha: rgba(239,68,68,0.12);
+
+        --shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+        --row-bg: #f8fafc;
+      }
+
+      [data-theme="dark"] {
+        --bg-color: #0a0a0a; /* Deeper black for background */
+        --card-bg: #1c1c1c; /* Darker card background */
+        --header-text: #f1f5f9;
+        --body-text: #e0e0e0; /* Lighter body text for contrast */
+        --muted-text: #a0a0a0; /* Softer muted text */
+        --border-color: #333333; /* Darker border for definition */
+        --input-bg: #0a0a0a; /* Input background matches main bg */
+        --nav-bg: #1a1a1a;
+        --accent-blue: #7c3aed; /* Deeper indigo/purple accent */
+        --accent-blue-hover: #a78bfa; /* Lighter hover for accent */
+        --hover-bg: #2d2d30;
+        --chart-green: #4ade80; /* Green 400 */
+        --chart-red: #fb7185; /* Rose 400 */
+        --chart-red-alpha: rgba(251,113,133,0.12);
+
+        --shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.5);
+        --row-bg: #111114;
+      }
+
+      body {
+        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+        margin: 0;
+        padding: 40px 20px;
+        background: var(--bg-color);
+        line-height: 1.5;
+        color: var(--body-text);
+        transition: background-color 0.3s, color 0.3s;
+      }
+
+      h1 {
+        color: var(--header-text);
+        margin-bottom: 20px;
+        font-weight: 800;
+        letter-spacing: -0.025em;
+      }
+
+      .main-card {
+        background: var(--card-bg);
+        border-radius: 16px;
+        box-shadow: var(--shadow);
+        padding: 24px;
+        margin-bottom: 20px;
+        border: 1px solid var(--border-color);
+      }
+
+      .card-title {
+        font-weight: 800;
+        font-size: 1.5rem;
+        margin: 0 0 4px 0;
+        color: var(--header-text);
+        letter-spacing: -0.01em;
+      }
+
+      .tab-content {
+        display: none;
+      }
+
+      .tab-content.active {
+        display: block;
+        animation: fadeIn 0.2s ease-out;
+      }
+
+      @keyframes fadeIn {
+        from { opacity: 0; transform: translateY(4px); }
+        to { opacity: 1; transform: translateY(0); }
+      }
+
+      label {
+        display: block;
+        margin-bottom: 6px;
+        font-size: 0.9rem;
+        font-weight: 500;
+        color: var(--body-text);
+      }
+
+      input[type="text"],
+      input[type="date"],
+      textarea,
+      select {
+        width: 100%;
+        padding: 12px 16px;
+        border: 1px solid var(--border-color);
+        border-radius: 10px;
+        font-size: 0.95rem;
+        margin-bottom: 12px;
+        box-sizing: border-box;
+        transition: all 0.2s;
+        background: var(--input-bg);
+        color: var(--body-text);
+      }
+
+      textarea {
+        resize: vertical;
+        min-height: 80px;
+        font-family: inherit;
+      }
+
+      input[type="date"] {
+        max-width: 280px;
+      }
+
+      input[type="text"]:focus,
+      input[type="date"]:focus,
+      textarea:focus,
+      select:focus {
+        outline: none;
+        border-color: var(--accent-blue);
+        box-shadow: 0 0 0 4px rgba(59, 130, 246, 0.2);
+        background: var(--card-bg);
+      }
+
+      button {
+        padding: 10px 16px;
+        border: none;
+        border-radius: 10px;
+        font-size: 0.95rem;
+        font-weight: 600;
+        cursor: pointer;
+        transition: all 0.2s;
+        margin-bottom: 12px;
+        margin-right: 8px;
+      }
+
+      button:hover {
+        transform: translateY(-1px);
+        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+      }
+
+      button:active {
+        transform: translateY(0);
+      }
+
+      #save-game {
+        background: var(--accent-blue);
+        color: white;
+        padding: 12px 24px;
+      }
+
+      #save-game:hover {
+        background: var(--accent-blue-hover);
+      }
+
+      #clear-game,
+      #cancel-edit {
+        background: transparent; /* Transparent background for secondary buttons */
+        border: 1px solid var(--muted-text); /* Border matches muted text */
+        color: var(--muted-text); /* Text matches muted text */
+      }
+
+      #clear-game:hover,
+      #cancel-edit:hover {
+        background: var(--hover-bg);
+      }
+
+      .winner-toggle {
+        margin-top: 4px;
+        margin-bottom: 0 !important;
+        padding: 8px 16px;
+        font-size: 0.9rem;
+      }
+
+      .winner-toggle.active {
+        background: var(--accent-blue);
+        color: white;
+        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+      }
+      .winner-toggle.active:hover {
+        background: var(--accent-blue-hover);
+      }
+
+      .secondary {
+        background: transparent;
+        border: 1px solid var(--muted-text);
+        color: var(--muted-text);
+      }
+
+      .secondary:hover {
+        background: var(--hover-bg);
+      }
+
+      table {
+        width: 100%;
+        border-collapse: collapse;
+        margin-bottom: 24px;
+      }
+
+      th, td {
+        border-bottom: 1px solid var(--border-color);
+        padding: 10px 12px;
+        text-align: left;
+      }
+
+      /* Navigation Styling */
+      .nav-bar {
+        display: flex;
+        gap: 8px;
+        background: var(--nav-bg);
+        padding: 6px;
+        border-radius: 12px;
+        margin-bottom: 24px;
+        border: 1px solid var(--border-color);
+        overflow-x: auto;
+      }
+
+      .nav-item {
+        padding: 10px 20px;
+        border-radius: 8px;
+        color: var(--muted-text);
+        font-weight: 600;
+        cursor: pointer;
+        transition: all 0.2s;
+        white-space: nowrap;
+        user-select: none;
+      }
+
+      .nav-item.active {
+        background: var(--card-bg);
+        color: var(--accent-blue);
+        box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+      }
+
+      th {
+        background: var(--row-bg);
+        font-weight: 700;
+        color: var(--muted-text);
+        text-transform: uppercase;
+        font-size: 0.75rem;
+        letter-spacing: 0.05em;
+        white-space: nowrap;
+      }
+
+      .stats-table-container {
+        max-height: 420px;
+        overflow-y: auto;
+        border-radius: 8px;
+        border: 1px solid var(--border-color);
+      }
+
+      .win-rate-wrapper {
+        display: flex;
+        flex-direction: column;
+        gap: 4px;
+        min-width: 100px;
+        align-items: flex-end; /* Right-align text and bars */
+      }
+
+      /* Eliminate dead space by expanding the first column and right-aligning the last */
+      .stats-table-container table th:first-child,
+      .stats-table-container table td:first-child {
+        width: 100%;
+      }
+      .stats-table-container table th:last-child,
+      .stats-table-container table td:last-child {
+        text-align: right;
+      }
+
+      .win-rate-bar-bg {
+        width: 100%;
+        height: 6px;
+        background: var(--border-color);
+        border-radius: 3px;
+        overflow: hidden;
+      }
+
+      .win-rate-bar-fill {
+        height: 100%;
+        background: var(--accent-blue);
+        border-radius: 3px;
+      }
+
+      .grid {
+        display: grid;
+        gap: 12px;
+        grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+      }
+
+      .player-grid {
+        grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+      }
+
+      .player-row {
+        display: flex;
+        flex-direction: column;
+        gap: 16px;
+        padding: 20px;
+        background: var(--row-bg);
+        border-radius: 14px;
+        border: 1px solid var(--border-color);
+      }
+
+      .player-row:hover {
+        background: var(--row-bg); /* Use row-bg for hover */
+        border-color: var(--accent-blue); /* Accent border on hover */
+      }
+
+      .player-row-inputs {
+        display: flex;
+        flex-direction: column;
+      }
+
+      .player-row h4 { /* Changed from strong to h4 */
+        display: block;
+        margin-bottom: 10px;
+        font-size: 1.1rem;
+        color: var(--accent-blue); /* Use accent color for player labels */
+        font-weight: 700;
+      }
+
+     .commander-portrait {
+    width: 100%;
+    height: 180px;
+    object-fit: cover;
+    border-radius: 0;
+    border: none;
+    margin-bottom: 0;
+    display: block;
+}
+
+.commander-display {
+    position: relative;
+    width: 100%;
+    height: 100%;
+}
+
+.commander-name-display {
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    right: 0;
+
+    padding: 12px;
+
+    background: linear-gradient(
+        transparent,
+        rgba(0,0,0,0.9)
+    );
+
+    color: white;
+    font-weight: bold;
+}
+
+     .commander-portrait-preview {
+    width: 100%;
+    height: 240px;
+    background: var(--input-bg);
+    border: 2px dashed var(--border-color);
+    border-radius: 14px;
+    overflow: hidden;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+      }
+
+      .commander-portrait-preview img {
+        width: 100%;
+        height: 100%;
+        object-fit: cover;
+      }
+
+      .portrait-upload {
+        width: 100%;
+      }
+
+      .portrait-upload input[type="file"] {
+        width: 100%;
+        padding: 6px 8px;
+        font-size: 0.8rem;
+        margin-bottom: 0;
+      }
+
+      .history-grid {
+        display: flex;
+        gap: 14px;
+        overflow-x: auto;
+        padding-bottom: 12px;
+        scroll-snap-type: x mandatory;
+        -webkit-overflow-scrolling: touch;
+        justify-content: center;
+      }
+
+      .history-grid::-webkit-scrollbar {
+        height: 8px;
+      }
+
+      .history-grid::-webkit-scrollbar-thumb {
+        background: rgba(0, 0, 0, 0.15);
+        border-radius: 999px;
+      }
+
+      .history-grid::-webkit-scrollbar-track {
+        background: transparent;
+      }
+
+      .history-card {
+        border: 1px solid var(--border-color);
+        border-radius: 16px;
+        padding: 18px;
+        background: var(--card-bg);
+        box-shadow: var(--shadow);
+        transition: all 0.2s;
+        display: grid;
+        gap: 18px;
+        min-width: 280px;
+        width: 280px;
+        scroll-snap-align: start;
+        justify-items: center;
+      }
+
+      .history-card:hover { /* Refined hover for history cards */
+        box-shadow: 0 8px 16px rgba(0,0,0,0.1);
+        border-color: var(--accent-blue);
+      }
+
+      .history-card-content {
+        display: grid;
+        grid-template-rows: auto 1fr auto;
+        gap: 16px;
+        width: 100%;
+        min-height: auto;
+        align-items: center;
+      }
+
+      .history-card-header {
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
+        align-items: center;
+        gap: 8px;
+        margin-bottom: 4px;
+        text-align: center;
+      }
+
+      .history-card h3 {
+        margin: 0;
+        font-size: 1.05rem;
+        color: var(--header-text); /* Use header text for date */
+        font-weight: 700;
+      }
+
+      .history-card-winner {
+        font-size: 0.85rem;
+        font-weight: 700;
+        color: var(--header-text); /* Text color for winner */
+        background: var(--row-bg); /* Background for winner pill */
+        padding: 6px 10px;
+        border-radius: 999px;
+        white-space: nowrap;
+      }
+
+      .history-card-players {
+        display: grid;
+        gap: 10px;
+        width: 100%;
+      }
+
+      .history-player {
+        display: grid; /* Changed to grid for better control */
+        grid-template-columns: 74px 1fr; /* Two columns: portrait and info */
+        align-items: center;
+        text-align: left; /* Align text left */
+        gap: 10px;
+        padding: 12px;
+        background: var(--row-bg);
+        border-radius: 14px;
+        border: 1px solid var(--border-color);
+        font-size: 0.88rem;
+      }
+
+      .history-player-info { /* New container for player name and commander */
+        display: grid;
+        gap: 4px;
+      }
+      .history-player-position { /* Position label for player */
+        font-size: 0.82rem;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+        font-weight: 800;
+        color: var(--accent-blue);
+      }
+
+      .history-player-name {
+        color: var(--header-text);
+        font-weight: 800;
+        font-size: 1rem;
+      }
+
+      .history-player-commander {
+        color: var(--muted-text);
+        font-size: 0.9rem;
+        max-width: 100%;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+
+      .history-player-portrait { /* Portrait for individual player in history */
+        width: 60px;
+        height: 80px;
+        object-fit: cover;
+        border-radius: 8px;
+        border: 1px solid var(--border-color);
+        background: var(--input-bg);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 1rem;
+        overflow: hidden;
+      }
+      .history-player-portrait img {
+        width: 100%;
+        height: 100%;
+        object-fit: cover;
+      }
+
+      .history-actions {
+        display: flex;
+        gap: 10px;
+        flex-wrap: wrap;
+        justify-content: center;
+        width: 100%;
+      }
+
+      .history-actions button {
+        font-size: 0.85rem;
+        padding: 10px 14px;
+        margin: 0;
+        flex: 1 1 130px;
+        border-radius: 8px;
+      }
+      .history-player.winner {
+        background: var(--row-bg);
+        border: 2px solid #ffd700; /* Gold ring */
+        box-shadow: 0 0 12px rgba(255, 215, 0, 0.3);
+        position: relative;
+      }
+
+      .history-actions {
+        display: flex;
+        gap: 10px;
+        flex-wrap: wrap;
+        align-self: end;
+        justify-content: stretch;
+      }
+
+      .history-actions button {
+        font-size: 0.88rem;
+        padding: 10px 14px;
+        margin: 0;
+        flex: 1 1 140px;
+        min-width: 140px;
+        border-radius: 8px;
+      }
+
+      #edit-mode {
+        background: #e3f2fd;
+        border-left: 4px solid #0066cc;
+        padding: 12px;
+        margin-bottom: 12px;
+        border-radius: 4px;
+        font-weight: 600;
+        color: #0066cc;
+      }
+
+      input[type="file"] {
+        padding: 8px;
+        font-size: 0.9rem;
+      }
+
+     .commander-portrait {
+      transition: transform 0.3s ease;
+    width: 100%;
+    height: 240px;
+    object-fit: cover;
+    object-position: center 15%;
+      }
+
+      .commander-portrait:hover {
+    transform: scale(1.05);
+}
+
+      .commander-input-group {
+        position: relative;
+      }
+
+      #edit-mode {
+        background: rgba(59, 130, 246, 0.1);
+        border-left: 4px solid var(--accent-blue);
+        padding: 10px 12px; /* Slightly reduced padding */
+        margin-bottom: 12px;
+        border-radius: 4px;
+        font-weight: 600;
+        color: var(--accent-blue);
+      }
+
+      #stats-tables h3 {
+        margin-top: 0; /* Removed top margin as stats-panel has padding */
+        margin-bottom: 8px;
+        font-size: 1rem;
+        color: var(--header-text);
+        font-weight: 600;
+      }
+
+      #stats-tables table {
+        font-size: 0.95rem;
+      }
+
+      #stats-tables table th {
+        background: var(--row-bg);
+        color: var(--accent-blue);
+        font-weight: 600;
+      }
+
+      #stats-dashboard {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+        gap: 12px;
+        margin-bottom: 20px;
+      }
+
+      .stat-card {
+        background: var(--card-bg);
+        border-radius: 10px;
+        padding: 16px;
+        text-align: center;
+        border: 1px solid var(--border-color);
+        box-shadow: var(--shadow);
+        position: relative;
+        transition: transform 0.2s, box-shadow 0.2s;
+      }
+
+      .stat-card:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 6px 18px rgba(0, 0, 0, 0.12);
+      }
+
+      .stat-card.record-breaker {
+        background: linear-gradient(135deg, rgba(251, 191, 36, 0.1) 0%, var(--card-bg) 100%);
+        border-color: #fbbf24;
+        animation: pulse-gold 2s infinite;
+      }
+
+      [data-theme="dark"] .stat-card.record-breaker {
+        background: linear-gradient(135deg, rgba(245, 158, 11, 0.15) 0%, var(--card-bg) 100%);
+        border-color: #f59e0b;
+      }
+
+      @keyframes pulse-gold {
+        0% { box-shadow: 0 0 0 0 rgba(251, 191, 36, 0.4); }
+        70% { box-shadow: 0 0 0 10px rgba(251, 191, 36, 0); }
+        100% { box-shadow: 0 0 0 0 rgba(251, 191, 36, 0); }
+      }
+
+      .stat-card-details {
+        position: absolute;
+        inset: 0;
+        background: var(--card-bg);
+        padding: 16px;
+        opacity: 0;
+        visibility: hidden;
+        transition: opacity 0.2s ease, visibility 0.2s ease;
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
+        z-index: 5;
+        border-radius: 12px;
+        text-align: left;
+      }
+
+      .stat-card:hover .stat-card-details {
+        opacity: 1;
+        visibility: visible;
+      }
+
+      .stat-detail-title {
+        font-size: 0.7rem;
+        font-weight: 800;
+        text-transform: uppercase;
+        color: var(--muted-text);
+        margin-bottom: 8px;
+        letter-spacing: 0.05em;
+      }
+
+      .stat-detail-row {
+        display: flex;
+        justify-content: space-between;
+        padding: 4px 0;
+        border-bottom: 1px solid var(--border-color);
+        font-size: 0.8rem;
+      }
+
+      .stat-detail-row:last-child { border-bottom: none; }
+      .stat-detail-name { font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 60%; }
+      .stat-detail-val { font-weight: 700; color: var(--header-text); }
+      .stat-detail-val small { color: var(--muted-text); font-weight: 400; font-size: 0.7rem; }
+
+      .stat-icon {
+        font-size: 1.8rem; /* Slightly smaller icons */
+        margin-bottom: 10px;
+      }
+
+      .stat-label {
+        font-size: 0.85rem;
+        text-transform: uppercase;
+        letter-spacing: 0.08em;
+        color: var(--muted-text);
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+
+      .stat-value {
+        font-size: 1.35rem;
+        font-weight: 700;
+        color: var(--header-text);
+        overflow-wrap: anywhere;
+      }
+
+      .stat-subtitle {
+        margin-top: 4px;
+        font-size: 0.85rem;
+        color: var(--muted-text);
+      }
+
+      .stats-charts {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+        gap: 16px;
+        margin-bottom: 24px;
+      }
+      
+      .stats-grid {
+        display: grid;
+        gap: 16px;
+        margin-bottom: 24px;
+      }
+
+      .chart-panel {
+        background: var(--card-bg);
+        border: 1px solid var(--border-color);
+        border-radius: 12px;
+        padding: 16px;
+        height: 280px; /* Slightly reduced chart height */
+        min-height: 0;
+        overflow: hidden;
+        display: flex;
+        flex-direction: column;
+      }
+
+      .chart-panel h3 {
+        margin-top: 0;
+        flex: 0 0 auto;
+        margin-bottom: 16px;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+
+      .stats-header-row {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 12px;
+      }
+
+      .chart-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 16px;
+        flex: 0 0 auto;
+      }
+
+      .toggle-group {
+        display: flex;
+        background: var(--input-bg);
+        border: 1px solid var(--border-color);
+        border-radius: 8px;
+        padding: 2px;
+      }
+
+      .toggle-btn {
+        padding: 4px 12px;
+        font-size: 0.75rem;
+        border-radius: 6px;
+        margin: 0 !important;
+        background: transparent;
+        color: var(--muted-text);
+        border: none;
+      }
+
+      .toggle-btn.active {
+        background: var(--accent-blue);
+        color: white;
+      }
+
+      .stats-panel {
+        background: var(--card-bg);
+        border: 1px solid var(--border-color);
+        border-radius: 12px;
+        padding: 16px;
+        display: flex;
+        flex-direction: column;
+        overflow-x: auto;
+      }
+      .stats-panel h3 {
+        margin-top: 0;
+        margin-bottom: 16px;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+
+      .chart-panel canvas {
+        display: block;
+        width: 100%;
+        height: 240px;
+        max-height: 240px;
+        min-height: 0;
+        flex: 0 0 240px;
+      }
+
+      .chart-panel-wide {
+        grid-column: 1 / -1;
+      }
+
+      #stats-dashboard.stats-grid {
+        grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+      }
+
+      #stats-charts.stats-grid {
+        grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+      }
+
+      #stats-tables.stats-grid {
+        grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+      }
+
+      /* High-density layout for stats tables */
+      #stats-tables.stats-grid {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 16px;
+      }
+      #stats-tables .stats-panel {
+        flex: 1 1 300px;
+      }
+
+      .commander-link {
+        color: var(--accent-blue);
+        cursor: pointer;
+        font-weight: 700;
+        text-decoration: none;
+      }
+
+      .commander-link:hover {
+        text-decoration: underline;
+      }
+
+      .player-link {
+        color: var(--accent-blue);
+        cursor: pointer;
+        font-weight: 700;
+        text-decoration: none;
+      }
+
+      .player-link:hover {
+        text-decoration: underline;
+      }
+
+      .section-description {
+        margin-top: 0;
+        margin-bottom: 8px;
+        color: var(--muted-text);
+        font-size: 0.95rem;
+        line-height: 1.6;
+      }
+
+      .modal-overlay {
+        position: fixed;
+        inset: 0;
+        z-index: 1000;
+        display: none;
+        align-items: center;
+        justify-content: center;
+        padding: 20px;
+        background: rgba(15, 23, 42, 0.62);
+      }
+
+      .modal-overlay.is-open {
+        display: flex;
+      }
+
+      .achievement-badge {
+        display: inline-flex;
+        flex-direction: column;
+        gap: 4px;
+        padding: 8px 12px;
+        background: var(--row-bg);
+        border: 1px solid var(--border-color);
+        border-radius: 10px;
+        font-size: 0.85rem;
+        transition: transform 0.2s;
+      }
+
+      .achievement-badge:hover {
+        transform: scale(1.05);
+        border-color: #fbbf24;
+      }
+
+      .achievement-badge.locked {
+        opacity: 0.7;
+        filter: grayscale(0.4);
+        border-style: dashed;
+      }
+
+      .achievement-progress-bg {
+        width: 100%;
+        height: 5px;
+        background: var(--border-color);
+        border-radius: 10px;
+        margin-top: 4px;
+        overflow: hidden;
+      }
+
+      .achievement-progress-fill {
+        height: 100%;
+        background: #fbbf24;
+        transition: width 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+      }
+
+      .achievement-icon { font-size: 1.2rem; }
+      .achievement-info { display: flex; flex-direction: column; }
+      .achievement-name { font-weight: 700; color: var(--header-text); }
+      .achievement-desc { font-size: 0.75rem; color: var(--muted-text); }
+
+      .commander-modal-content {
+        position: relative;
+        width: min(920px, 100%);
+        max-height: 92vh;
+        overflow: auto;
+        background: var(--card-bg);
+        border-radius: 12px;
+        box-shadow: 0 24px 70px rgba(0, 0, 0, 0.28);
+        color: var(--body-text);
+      }
+
+      .modal-close {
+        position: absolute;
+        top: 10px;
+        right: 10px;
+        z-index: 2;
+        width: 36px;
+        height: 36px;
+        padding: 0;
+        margin: 0;
+        border-radius: 50%;
+        background: rgba(15, 23, 42, 0.85);
+        color: white;
+      }
+
+      .modal-art {
+        width: 100%;
+        height: 320px;
+        object-fit: cover;
+        object-position: center 20%;
+        background: var(--input-bg);
+        display: block;
+      }
+
+      .modal-body-inner {
+        padding: 22px;
+        display: grid;
+        gap: 18px;
+      }
+
+      .modal-stats-grid,
+      .modal-date-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+        gap: 12px;
+      }
+
+      .modal-stat {
+        padding: 14px;
+        border: 1px solid var(--border-color);
+        border-radius: 10px;
+        background: var(--row-bg);
+      }
+
+      .modal-stat-label {
+        font-size: 0.8rem;
+        color: var(--muted-text);
+        text-transform: uppercase;
+        letter-spacing: 0.08em;
+      }
+
+      .modal-stat-value {
+        margin-top: 4px;
+        font-size: 1.2rem;
+        font-weight: 800;
+        color: var(--header-text);
+      }
+
+      .modal-list {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+      }
+
+      .modal-pill {
+        padding: 6px 10px;
+        border-radius: 999px;
+        background: var(--input-bg);
+        color: var(--body-text);
+        font-weight: 700;
+        font-size: 0.85rem;
+        border: 1px solid var(--border-color);
+      }
+
+      .pill-W { background: #fefce8; color: #a16207; border-color: #fde047; }
+      .pill-U { background: #eff6ff; color: #1d4ed8; border-color: #bfdbfe; }
+      .pill-B { background: #1e293b; color: #f1f5f9; border-color: #0f172a; }
+      .pill-R { background: #fef2f2; color: #dc2626; border-color: #fecaca; } /* No change for light mode R */
+      .pill-G { background: #f0fdf4; color: #15803d; border-color: #bbf7d0; }
+
+      [data-theme="dark"] .pill-W { background: rgba(255, 255, 255, 0.05); color: #f8fafc; border-color: rgba(255, 255, 255, 0.2); }
+      [data-theme="dark"] .pill-U { background: rgba(56, 189, 248, 0.1); color: #38bdf8; border-color: rgba(56, 189, 248, 0.3); }
+      [data-theme="dark"] .pill-B { background: rgba(0, 0, 0, 0.4); color: #94a3b8; border-color: #334155; }
+      [data-theme="dark"] .pill-R { background: rgba(251, 113, 133, 0.1); color: #fb7185; border-color: rgba(251, 113, 133, 0.3); }
+      [data-theme="dark"] .pill-G { background: rgba(52, 211, 153, 0.1); color: #34d399; border-color: rgba(52, 211, 153, 0.3); }
+
+      #commander-library {
+        display: flex;
+        gap: 12px;
+        overflow-x: auto;
+        padding: 12px 0;
+        scroll-behavior: smooth;
+        scroll-snap-type: x mandatory;
+      }
+
+      #commander-library::-webkit-scrollbar {
+        height: 8px;
+      }
+
+      #commander-library::-webkit-scrollbar-thumb {
+        background: rgba(0, 0, 0, 0.15);
+        border-radius: 999px;
+      }
+
+      #commander-library::-webkit-scrollbar-track {
+        background: transparent;
+      }
+
+      .commander-card {
+        border: 1px solid var(--border-color);
+        border-radius: 6px;
+        padding: 10px;
+        text-align: center;
+        background: var(--card-bg);
+        transition: all 0.2s;
+        flex-shrink: 0;
+        width: 100px;
+        scroll-snap-align: start;
+      }
+
+      .commander-card:hover {
+        background: var(--row-bg);
+        border-color: var(--accent-blue);
+        box-shadow: var(--shadow);
+        transform: translateY(-5px);
+        z-index: 10;
+      }
+
+      .commander-card:hover img {
+        transform: scale(1.15); /* Only the image scales */
+        /* z-index is handled by the parent card's z-index */
+      }
+
+      .commander-card img {
+        width: 100%;
+        height: 100px;
+        object-fit: cover;
+        border-radius: 4px;
+        margin-bottom: 6px;
+      }
+
+      .commander-card-name {
+        font-size: 0.75rem;
+        font-weight: 500;
+        word-break: break-word;
+        margin-bottom: 8px; /* Increased margin for name */
+        color: var(--body-text);
+        line-height: 1.3;
+      }
+
+      .commander-card button {
+        font-size: 0.7rem;
+        padding: 4px 6px;
+        margin: 0;
+        width: auto; /* Allow button to size to content */
+      }
+
+      .header-container {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 32px;
+        flex-wrap: wrap;
+        gap: 16px;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="header-container">
+      <h1 style="margin-bottom: 0;">MTG Game Tracker</h1>
+      <div style="display: flex; gap: 8px; flex-wrap: wrap;">
+        <button id="export-data-btn" class="secondary" style="margin: 0;">📤 Export</button>
+        <button id="import-data-btn" class="secondary" style="margin: 0;">📥 Import</button>
+        <input type="file" id="import-file-input" style="display: none;" accept=".json">
+        <button id="theme-toggle" class="secondary" style="margin: 0;">🌙 Dark Mode</button>
+      </div>
+    </div>
+
+    <nav class="nav-bar">
+      <div class="nav-item active" data-tab="tab-record">🎮 Record Game</div>
+      <div class="nav-item" data-tab="tab-stats">📊 Statistics</div>
+      <div class="nav-item" data-tab="tab-history">📜 History</div>
+      <div class="nav-item" data-tab="tab-library">📚 Library</div>
+      <div class="nav-item" data-tab="tab-rage-quits">🧂 The Salt Mines</div>
+    </nav>
+
+    <div id="tab-record" class="tab-content active">
+      <div class="main-card">
+        <h2 class="card-title">Record New Game</h2>
+      <div class="grid">
+        <div>
+          <label for="game-date">Game Date</label>
+          <input type="date" id="game-date" name="game-date">
+        </div>
+      </div>
+
+      <div>
+        <div class="grid player-grid">
+          <div class="player-row">
+            <div class="player-row-inputs">
+              <h4>First</h4> <!-- Changed to h4 -->
+              <label for="player-first-name">Player Name</label>
+              <input type="text" id="player-first-name" placeholder="Player name" list="player-first-names-list">
+              <label for="commander-first">Commander</label>
+              <input type="text" id="commander-first" placeholder="Commander" list="commanders-first-list" style="margin-bottom: 8px;">
+              <button type="button" class="winner-toggle secondary" data-seat-key="first">🏆 Winner</button>
+            </div>
+            <div class="player-row-portrait">
+              <div id="portrait-first" class="commander-portrait-preview">📷</div>
+            </div>
+          </div>
+
+          <div class="player-row">
+            <div class="player-row-inputs">
+              <h4>Second</h4> <!-- Changed to h4 -->
+              <label for="player-second-name">Player Name</label>
+              <input type="text" id="player-second-name" placeholder="Player name" list="player-second-names-list">
+              <label for="commander-second">Commander</label>
+              <input type="text" id="commander-second" placeholder="Commander" list="commanders-second-list" style="margin-bottom: 8px;">
+              <button type="button" class="winner-toggle secondary" data-seat-key="second">🏆 Winner</button>
+            </div>
+            <div class="player-row-portrait">
+              <div id="portrait-second" class="commander-portrait-preview">📷</div>
+            </div>
+          </div>
+
+          <div class="player-row">
+            <div class="player-row-inputs">
+              <h4>Third</h4> <!-- Changed to h4 -->
+              <label for="player-third-name">Player Name</label>
+              <input type="text" id="player-third-name" placeholder="Player name" list="player-third-names-list">
+              <label for="commander-third">Commander</label>
+              <input type="text" id="commander-third" placeholder="Commander" list="commanders-third-list" style="margin-bottom: 8px;">
+              <button type="button" class="winner-toggle secondary" data-seat-key="third">🏆 Winner</button>
+            </div>
+            <div class="player-row-portrait">
+              <div id="portrait-third" class="commander-portrait-preview">📷</div>
+            </div>
+          </div>
+
+          <div class="player-row">
+            <div class="player-row-inputs">
+              <h4>Last</h4> <!-- Changed to h4 -->
+              <label for="player-last-name">Player Name</label>
+              <input type="text" id="player-last-name" placeholder="Player name" list="player-last-names-list">
+              <label for="commander-last">Commander</label>
+              <input type="text" id="commander-last" placeholder="Commander" list="commanders-last-list" style="margin-bottom: 8px;">
+              <button type="button" class="winner-toggle secondary" data-seat-key="last">🏆 Winner</button>
+            </div>
+            <div class="player-row-portrait">
+              <div id="portrait-last" class="commander-portrait-preview">📷</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div id="edit-mode" style="margin-bottom: 12px; display:none; font-weight:700; color:#0a58ca;"></div>
+      <div style="display: flex; gap: 12px; flex-wrap: wrap; margin-top: 20px;"> <!-- Adjusted margin-top -->
+        <button id="save-game">Save Game</button>
+        <button id="cancel-edit" class="secondary" style="display:none;">Cancel Edit</button>
+        <button id="clear-game">Clear Current Game</button>
+      </div>
+      </div>
+    </div>
+    
+    <div id="tab-history" class="tab-content">
+      <div class="main-card">
+        <h2 class="card-title">Game History</h2>
+      <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px; margin-bottom: 8px;">
+        <p style="margin: 0; color: #666; font-size: 0.95rem;">View and manage past games</p>
+        <input type="text" id="history-search" placeholder="Search players or commanders..." style="max-width: 300px; margin-bottom: 0;">
+      </div>
+      <div id="game-history-list" class="history-grid"></div>
+      </div>
+    </div>
+
+    <div id="tab-rage-quits" class="tab-content">
+      <div class="main-card" style="text-align: center; padding: 40px 20px;">
+        <h2 class="card-title" style="font-size: 2.5rem; margin-bottom: 20px;">The Salt Mines</h2>
+        <p class="section-description" style="font-size: 1.2rem;">Tracking the legendary Jason meltdowns</p>
+        <div id="rage-quit-display" style="font-size: 3.5rem; font-weight: 900; color: var(--chart-red); margin: 30px 0; line-height: 1.2;">
+          Jason has rage quit <span id="rage-quit-count" style="font-size: 7rem; display: block; margin: 10px 0;">0</span> times
+        </div>
+        <div style="max-width: 450px; margin: 0 auto 40px auto; background: var(--row-bg); padding: 20px; border-radius: 16px; border: 1px solid var(--border-color);">
+          <label for="rage-quit-date" style="text-align: left;">Date of the salt</label>
+          <input type="date" id="rage-quit-date" style="margin-bottom: 12px; max-width: 100%;">
+          <label for="rage-quit-reason" style="text-align: left;">Reason for the salt</label>
+          <textarea id="rage-quit-reason" placeholder="Describe the meltdown in detail..."></textarea>
+          <button id="record-rage-quit" style="background: var(--chart-red); color: white; padding: 20px; font-size: 1.2rem; border-radius: 12px; width: 100%; margin: 0; box-shadow: 0 8px 16px rgba(239, 68, 68, 0.25);">RECORD RAGE QUIT</button>
+          <button id="cancel-rage-edit" class="secondary" style="display: none; width: 100%; padding: 12px; font-size: 1rem; border-radius: 10px; margin-top: 10px; margin-right: 0;">Cancel Edit</button>
+        </div>
+        <div id="rage-quit-history-container" style="margin-top: 40px; text-align: left; max-width: 600px; margin-left: auto; margin-right: auto;">
+          <h3 style="border-bottom: 2px solid var(--border-color); padding-bottom: 10px; margin-bottom: 20px; font-weight: 800;">Meltdown History</h3>
+          <div id="rage-quit-history-list"></div>
+        </div>
+      </div>
+    </div>
+
+    <div id="tab-stats" class="tab-content">
+      <div class="main-card">
+        <h2 class="card-title">Statistics</h2>
+        <p class="section-description">Win rates and performance metrics</p>
+        <div id="stats-dashboard" class="stats-grid"></div>
+        <div id="stats-charts" class="stats-charts stats-grid">
+          <div class="chart-panel chart-panel-wide">
+            <div class="chart-header">
+              <h3 id="main-chart-title" style="margin-bottom: 0;">Weekly Games</h3>
+              <div class="toggle-group">
+                <button id="toggle-weekly" class="toggle-btn active">Weekly</button>
+                <button id="toggle-monthly" class="toggle-btn">Monthly</button>
+              </div>
+            </div>
+            <canvas id="monthly-games-chart"></canvas>
+          </div>
+        </div>
+        <div id="stats-tables" class="stats-grid">
+          <div class="stats-panel">
+            <div class="stats-header-row">
+              <h3 style="margin:0;">Commander Stats</h3>
+              <input type="text" id="commander-stats-search" list="stats-commander-list" placeholder="Search..." style="max-width: 140px; margin:0; padding: 6px 10px; font-size: 0.8rem;">
+            </div>
+            <p id="commander-stats-info" style="font-size: 0.75rem; color: var(--muted-text); margin-top: -8px; margin-bottom: 8px;">Showing Top 10</p>
+            <div id="commander-stats-table-content"></div>
+          </div>
+          <div class="stats-panel">
+            <h3>Seat Advantage</h3>
+            <div id="seat-advantage-table-content"></div>
+          </div>
+          <div class="stats-panel">
+            <div class="stats-header-row">
+              <h3 style="margin:0;">Colour Statistics</h3>
+              <input type="text" id="color-stats-search" list="stats-color-list" placeholder="Search..." style="max-width: 140px; margin:0; padding: 6px 10px; font-size: 0.8rem;">
+            </div>
+            <p id="color-stats-info" style="font-size: 0.75rem; color: var(--muted-text); margin-top: -8px; margin-bottom: 8px;">Showing Top 10</p>
+            <div id="color-statistics-table-content"></div>
+          </div>
+          <div class="stats-panel">
+            <div class="stats-header-row">
+              <h3 style="margin:0;">Signature Pairings</h3>
+              <div style="display: flex; gap: 8px; align-items: center;">
+                <div class="toggle-group">
+                  <button id="toggle-pair-rate" class="toggle-btn active">Win Rate</button>
+                  <button id="toggle-pair-games" class="toggle-btn">Games</button>
+                </div>
+                <input type="text" id="pair-stats-search" list="stats-pair-list" placeholder="Search pairings..." style="max-width: 200px; margin:0; padding: 6px 10px; font-size: 0.8rem;">
+              </div>
+            </div>
+            <p id="pair-stats-info" style="font-size: 0.75rem; color: var(--muted-text); margin-top: -8px; margin-bottom: 8px;">Showing Top 10</p>
+            <div id="pair-stats-table-content"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <datalist id="player-first-names-list"></datalist>
+    <datalist id="player-second-names-list"></datalist>
+    <datalist id="player-third-names-list"></datalist>
+    <datalist id="player-last-names-list"></datalist>
+    <datalist id="commanders-first-list"></datalist>
+    <datalist id="commanders-second-list"></datalist>
+    <datalist id="commanders-third-list"></datalist>
+    <datalist id="commanders-last-list"></datalist>
+    <datalist id="stats-commander-list"></datalist>
+    <datalist id="stats-color-list"></datalist>
+    <datalist id="stats-pair-list"></datalist>
+    <datalist id="library-commander-list"></datalist>
+
+    <div id="tab-library" class="tab-content">
+      <div class="main-card">
+        <div class="stats-header-row">
+          <h2 class="card-title">Commander Library</h2>
+          <input type="text" id="library-search" list="library-commander-list" placeholder="Search library..." style="max-width: 220px; margin:0; padding: 6px 10px; font-size: 0.8rem;">
+        </div>
+      <p style="margin-top: 4px; margin-bottom: 4px; color: #666; font-size: 0.95rem;">Scroll through your commander collection</p>
+      <div id="commander-library"></div>
+      </div>
+    </div>
+
+    <div id="commander-modal" class="modal-overlay" aria-hidden="true">
+      <div class="commander-modal-content" role="dialog" aria-modal="true" aria-labelledby="commander-modal-title">
+        <button id="commander-modal-close" class="modal-close" type="button" aria-label="Close commander details">x</button>
+        <div id="commander-modal-body"></div>
+      </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="app.js"></script>
+  </body>
+</html>
