@@ -1137,9 +1137,71 @@
         flex-wrap: wrap;
         gap: 16px;
       }
+
+      /* Loading Overlay */
+      #loading-overlay {
+        position: fixed;
+        inset: 0;
+        background: rgba(0, 0, 0, 0.5);
+        display: none;
+        align-items: center;
+        justify-content: center;
+        z-index: 2000;
+        backdrop-filter: blur(2px);
+      }
+      .spinner {
+        width: 40px;
+        height: 40px;
+        border: 4px solid #f3f3f3;
+        border-top: 4px solid var(--accent-blue);
+        border-radius: 50%;
+        animation: spin 1s linear infinite;
+      }
+      @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+
+      /* Toast Notifications */
+      #toast-container {
+        position: fixed;
+        bottom: 24px;
+        left: 50%;
+        transform: translateX(-50%);
+        z-index: 3000;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 8px;
+      }
+      .toast {
+        padding: 12px 20px;
+        background: var(--card-bg);
+        color: var(--body-text);
+        border-radius: 8px;
+        box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1);
+        border-left: 4px solid var(--accent-blue);
+        font-weight: 600;
+        font-size: 0.9rem;
+        min-width: 200px;
+        animation: slideIn 0.3s ease-out;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+      }
+      .toast.success { border-left-color: var(--chart-green); }
+      .toast.error { border-left-color: var(--chart-red); }
+      @keyframes slideIn {
+        from { transform: translateY(20px); opacity: 0; }
+        to { transform: translateY(0); opacity: 1; }
+      }
+      @keyframes fadeOut {
+        from { opacity: 1; }
+        to { opacity: 0; }
+      }
     </style>
   </head>
   <body>
+    <div id="loading-overlay"><div class="spinner"></div></div>
+    <div id="toast-container"></div>
+
     <div class="header-container">
       <h1 style="margin-bottom: 0;">MTG Game Tracker</h1>
       <div style="display: flex; gap: 8px; flex-wrap: wrap;">

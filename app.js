@@ -28,6 +28,43 @@ let colorSearchQuery = '';
 let pairSearchQuery = '';
 let pairSortMode = 'rate'; // 'rate' or 'games'
 
+// --- UI Feedback Helpers ---
+let loadingCount = 0;
+function showLoading() {
+  loadingCount++;
+  document.getElementById('loading-overlay').style.display = 'flex';
+}
+function hideLoading() {
+  loadingCount = Math.max(0, loadingCount - 1);
+  if (loadingCount === 0) document.getElementById('loading-overlay').style.display = 'none';
+}
+
+function showToast(message, type = 'info') {
+  const container = document.getElementById('toast-container');
+  if (!container) return;
+  
+  const toast = document.createElement('div');
+  toast.className = `toast ${type}`;
+  toast.innerHTML = `<span>${escapeHtml(message)}</span>`;
+  
+  container.appendChild(toast);
+  
+  // Auto-remove after 3 seconds
+  setTimeout(() => {
+    toast.style.animation = 'fadeOut 0.5s ease-out forwards';
+    setTimeout(() => toast.remove(), 500);
+  }, 3000);
+}
+
+// Replacing standard alerts with toasts
+function notifyError(msg) {
+    console.error(msg);
+    showToast(msg, 'error');
+}
+function notifySuccess(msg) {
+    showToast(msg, 'success');
+}
+
 function escapeHtml(value) {
   return String(value ?? '').replace(/[&<>"']/g, char => ({
     '&': '&amp;',
@@ -123,6 +160,7 @@ async function syncToSupabase(table, data, matchKey = 'id') {
 
 async function loadAllData() {
     // Load everything from Supabase instead of LocalStorage
+    showLoading();
     const [gamesRes, cmdRes, rageRes] = await Promise.all([
         sb.from('games').select('*').order('date', { ascending: true }),
         sb.from('commander_data').select('*'),
@@ -159,6 +197,8 @@ async function loadAllData() {
     renderGameHistory();
     renderStats();
     renderRageQuits();
+    
+    hideLoading();
 }
 
 async function fetchCommanderImage(commanderName) {
@@ -171,6 +211,7 @@ async function fetchCommanderImage(commanderName) {
 
   try {
     pendingFetches.add(commanderName);
+    showLoading();
     const response = await fetch(`https://api.scryfall.com/cards/named?fuzzy=${encodeURIComponent(commanderName)}`);
     if (!response.ok) throw new Error('Card not found');
     const card = await response.json();
@@ -202,6 +243,7 @@ async function fetchCommanderImage(commanderName) {
     if (!commanderData[commanderName].image) commanderData[commanderName].image = '';
   } finally {
     pendingFetches.delete(commanderName);
+    hideLoading();
   }
 }
 
@@ -338,7 +380,7 @@ function getSeatPlayers() {
 function validateGame(players) {
   const date = document.getElementById('game-date').value;
   if (!date) {
-    alert('Please select a game date.');
+    showToast('Please select a game date.', 'error');
     return null;
   }
 
@@ -347,24 +389,24 @@ function validateGame(players) {
   // Duplicate player name validation
   const names = validPlayers.map(p => p.name.trim().toLowerCase());
   if (new Set(names).size !== names.length) {
-    alert('The same player cannot be selected more than once in the same game.');
+    showToast('The same player cannot be selected more than once in the same game.', 'error');
     return null;
   }
 
   if (validPlayers.length < 1) {
-    alert('Please enter at least 1 player with a name and commander.');
+    showToast('Please enter at least 1 player.', 'error');
     return null;
   }
 
   const winner = players.find(p => p.isWinner);
   
   if (!winner) {
-    alert('Please select a game winner.');
+    showToast('Please select a game winner.', 'error');
     return null;
   }
 
   if (!winner.name || !winner.commander) {
-    alert('The selected winner must have a player name and commander.');
+    showToast('Selected winner needs a name/commander.', 'error');
     return null;
   }
 
@@ -920,6 +962,10 @@ function resetCurrentGame() {
   if (cancelEdit) cancelEdit.style.display = 'none';
 }
 
+function notifyClear() {
+    showToast('Form cleared.', 'info');
+}
+
 function openCommanderModal(commanderName) {
   if (!commanderName) return;
   const appearances = [];
@@ -1314,6 +1360,7 @@ window.addEventListener('load', () => {
       if (!validPlayers) return;
       const game = { date: document.getElementById('game-date').value, players: validPlayers };
       
+      showLoading();
       // If we are editing, include the ID so Supabase updates the existing record
       if (currentGame.index !== null && games[currentGame.index]) {
           game.id = games[currentGame.index].id;
@@ -1323,13 +1370,20 @@ window.addEventListener('load', () => {
       if (!error) {
           await loadAllData();
           resetCurrentGame();
+          showToast('Game saved successfully!', 'success');
       } else {
-          console.error("Error saving game:", error);
+          notifyError("Error saving game: " + error.message);
       }
+      hideLoading();
     });
 
     safeAddListener('cancel-edit', 'click', () => { currentGame.index = null; resetCurrentGame(); });
-    safeAddListener('clear-game', 'click', () => { if (confirm('Clear current entries?')) resetCurrentGame(); });
+    safeAddListener('clear-game', 'click', () => { 
+        if (confirm('Clear current entries?')) {
+            resetCurrentGame();
+            showToast('Form cleared.', 'info');
+        }
+    });
 
     safeAddListener('game-history-list', 'click', event => {
       const c = event.target.closest('[data-commander-detail]'); if (c) return openCommanderModal(c.dataset.commanderDetail);
@@ -1360,7 +1414,11 @@ window.addEventListener('load', () => {
       if (event.target.matches('.delete-commander-image')) {
         const name = event.target.dataset.commander; 
         if (confirm(`Delete art for ${name}?`)) {
-            sb.from('commander_data').delete().eq('name', name).then(() => loadAllData());
+            showLoading();
+            sb.from('commander_data').delete().eq('name', name).then(() => {
+                loadAllData();
+                showToast('Art cache removed.', 'info');
+            });
         }
       }
     });
@@ -1369,8 +1427,12 @@ window.addEventListener('load', () => {
       const rInput = document.getElementById('rage-quit-reason'); const dInput = document.getElementById('rage-quit-date');
       const reason = rInput ? rInput.value.trim() : ''; const date = dInput ? dInput.value : '';
       
+      showLoading();
       await sb.from('rage_quits').upsert({ date, reason });
-      if (rInput) rInput.value = ''; loadAllData();
+      if (rInput) rInput.value = ''; 
+      await loadAllData();
+      showToast('The salt has been recorded.', 'success');
+      hideLoading();
     });
 
     safeAddListener('stats-dashboard', 'click', event => {
@@ -1401,6 +1463,7 @@ function importData(jsonString) {
 
     if (confirm(`Migrating ${gamesToImport.length} games. This may take a moment. Continue?`)) {
         const runImport = async () => {
+            showLoading();
             // We strip any existing IDs from local data to let Supabase generate fresh UUIDs
             const cleanGames = gamesToImport.map(({ id, created_at, ...rest }) => ({
                 date: rest.date,
@@ -1428,13 +1491,14 @@ function importData(jsonString) {
             if (errors.length > 0) {
                 console.error("Import failed. Likely cause: RLS Policies.", errors);
                 const msg = errors.map(e => e.error.message).join('\n');
-                alert(`Import failed:\n${msg}`);
+                notifyError(`Import failed: ${msg}`);
             } else {
-            alert("Import successful! Your local data has been migrated to Supabase.");
-            location.reload();
+                showToast("Import successful!", "success");
+                location.reload();
             }
+            hideLoading();
         };
         runImport();
     }
-  } catch (e) { alert("Failed: " + e.message); }
+  } catch (e) { notifyError("Import Failed: " + e.message); }
 }
