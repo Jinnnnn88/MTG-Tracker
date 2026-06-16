@@ -1,9 +1,8 @@
-const STORAGE_KEY = 'mtgGameTracker.games';
-const LEGACY_IMAGES_KEY = 'mtgGameTracker.commanderImages';
-const COMMANDER_DATA_KEY = 'mtgGameTracker.commanderData';
-const THEME_KEY = 'mtgGameTracker.theme';
-const RAGE_QUIT_KEY = 'mtgGameTracker.rageQuits';
-
+const STORAGE_KEY = 'mtgGameTracker.games.dev'; // Changed for dev environment
+const LEGACY_IMAGES_KEY = 'mtgGameTracker.commanderImages.dev'; // Changed for dev environment
+const COMMANDER_DATA_KEY = 'mtgGameTracker.commanderData.dev'; // Changed for dev environment
+const THEME_KEY = 'mtgGameTracker.theme.dev'; // Changed for dev environment
+const RAGE_QUIT_KEY = 'mtgGameTracker.rageQuits.dev'; // Changed for dev environment
 const seatFields = [
   { key: 'first', seat: 1 },
   { key: 'second', seat: 2 },
