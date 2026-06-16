@@ -4,6 +4,16 @@ const COMMANDER_DATA_KEY = 'mtgGameTracker.commanderData';
 const THEME_KEY = 'mtgGameTracker.theme';
 const RAGE_QUIT_KEY = 'mtgGameTracker.rageQuits';
 
+// --- CLOUD CONFIGURATION ---
+const SUPABASE_URL = 'https://your-project-id.supabase.co';
+const SUPABASE_KEY = 'your-public-anon-key';
+// Use window.supabase to avoid shadowing the global library with our local constant
+const supabase = (window.supabase && window.supabase.createClient) ? window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY) : null;
+
+// --- ADMIN CONFIGURATION ---
+const ADMIN_PASSPHRASE = 'your-secret-passphrase'; // Change this to your desired password
+let isAdmin = localStorage.getItem('mtg_admin_active') === 'true';
+
 const seatFields = [
   { key: 'first', seat: 1 },
   { key: 'second', seat: 2 },
@@ -108,24 +118,30 @@ function getCommanderColors(commanderName) {
   return commanderData[commanderName] ? commanderData[commanderName].colors || [] : [];
 }
 
-function saveGames() {
+async function saveGames() {
   localStorage.setItem(STORAGE_KEY, JSON.stringify(games));
+  if (supabase) {
+    await supabase.from('mtg_state').upsert({ id: 'current_games', data: games });
+  }
 }
 
-function saveCommanderData() {
+async function saveCommanderData() {
   localStorage.setItem(COMMANDER_DATA_KEY, JSON.stringify(commanderData));
-  const legacyImages = {};
-  Object.entries(commanderData).forEach(([name, data]) => {
-    if (data.image) legacyImages[name] = data.image;
-  });
-  localStorage.setItem(LEGACY_IMAGES_KEY, JSON.stringify(legacyImages));
+  if (supabase) {
+    await supabase.from('mtg_state').upsert({ id: 'commander_data', data: commanderData });
+  }
 }
 
-function loadCommanderData() {
+async function loadCommanderData() {
   const storedData = localStorage.getItem(COMMANDER_DATA_KEY);
-  const legacyImages = JSON.parse(localStorage.getItem(LEGACY_IMAGES_KEY) || '{}');
-  const loaded = storedData ? JSON.parse(storedData) : (legacyImages || {});
+  let loaded = storedData ? JSON.parse(storedData) : {};
   
+  if (supabase) {
+    // Use maybeSingle() to avoid errors if the cloud is currently empty
+    const { data } = await supabase.from('mtg_state').select('data').eq('id', 'commander_data').maybeSingle();
+    if (data) loaded = data.data;
+  }
+
   const migrated = {};
   Object.entries(loaded).forEach(([name, value]) => {
     const normalName = titleCase(name);
@@ -144,23 +160,26 @@ function loadCommanderData() {
   games.forEach(game => {
     game.players.forEach(player => ensureCommanderData(player.commander));
   });
-  saveCommanderData();
 }
 
-function loadGames() {
+async function loadGames() {
   const rawGames = JSON.parse(localStorage.getItem(STORAGE_KEY) || '[]');
-  const normalised = normaliseGames(rawGames);
-  games = normalised.games;
-  if (normalised.changed) saveGames();
-  loadCommanderData();
-  try {
-    const storedRage = localStorage.getItem(RAGE_QUIT_KEY);
-    const parsedRage = storedRage ? JSON.parse(storedRage) : [];
-    rageQuits = Array.isArray(parsedRage) ? parsedRage : [];
-  } catch (e) {
-    const legacyCount = parseInt(localStorage.getItem(RAGE_QUIT_KEY)) || 0;
-    rageQuits = legacyCount > 0 ? Array(legacyCount).fill({ date: 'Legacy Record', reason: 'Pre-history salt' }) : [];
+  if (supabase) {
+    const { data } = await supabase.from('mtg_state').select('data').eq('id', 'current_games').maybeSingle();
+    if (data) games = data.data;
   }
+
+  const normalised = normaliseGames(rawGames);
+  if (!supabase) games = normalised.games;
+  
+  if (normalised.changed) saveGames();
+  await loadCommanderData();
+  
+  if (supabase) {
+    const { data } = await supabase.from('mtg_state').select('data').eq('id', 'rage_quits').maybeSingle();
+    if (data) rageQuits = data.data;
+  }
+
   populateDataLists();
   renderCommanderLibrary();
   renderGameHistory();
@@ -1196,7 +1215,27 @@ function updateBountyIcons() {
   });
 }
 
-window.addEventListener('load', () => {
+function updateAdminVisibility() {
+  const recordNavItem = document.querySelector('[data-tab="tab-record"]');
+  const saltUI = document.getElementById('salt-recording-ui');
+  const unlockBtn = document.getElementById('admin-unlock-btn');
+
+  if (isAdmin) {
+    if (recordNavItem) recordNavItem.style.display = 'block';
+    if (saltUI) saltUI.style.display = 'block';
+    if (unlockBtn) unlockBtn.innerHTML = '🔓 Lock Admin';
+  } else {
+    if (recordNavItem) recordNavItem.style.display = 'none';
+    if (saltUI) saltUI.style.display = 'none';
+    if (unlockBtn) unlockBtn.innerHTML = '🔒 Unlock';
+    // If they were on the record tab, move them to stats
+    if (document.getElementById('tab-record').classList.contains('active')) {
+        document.querySelector('[data-tab="tab-stats"]')?.click();
+    }
+  }
+}
+
+window.addEventListener('load', async () => {
   try {
     const today = new Date().toISOString().split('T')[0];
     const gameDateInput = document.getElementById('game-date');
@@ -1205,7 +1244,9 @@ window.addEventListener('load', () => {
     if (document.getElementById('rage-quit-date')) document.getElementById('rage-quit-date').value = today;
     currentGame.date = today;
     initTheme();
-    loadGames();
+    await loadGames();
+
+    updateAdminVisibility();
 
     const autocompleteTimers = {};
 
@@ -1267,6 +1308,22 @@ window.addEventListener('load', () => {
     });
 
     safeAddListener('theme-toggle', 'click', toggleTheme);
+
+    safeAddListener('admin-unlock-btn', 'click', () => {
+      if (isAdmin) {
+        isAdmin = false;
+        localStorage.setItem('mtg_admin_active', 'false');
+      } else {
+        const entry = prompt('Enter Master Passphrase:');
+        if (entry === ADMIN_PASSPHRASE) {
+          isAdmin = true;
+          localStorage.setItem('mtg_admin_active', 'true');
+        } else if (entry !== null) {
+          alert('Incorrect passphrase.');
+        }
+      }
+      updateAdminVisibility();
+    });
 
     // Navigation logic
     const navItems = document.querySelectorAll('.nav-item');
@@ -1597,9 +1654,14 @@ function importData(jsonString) {
       games.sort((a, b) => a.date.localeCompare(b.date));
       commanderData = data.commanderData || {};
       rageQuits = data.rageQuits || [];
-      saveGames();
-      saveCommanderData();
+      
+      // Ensure we wait for the cloud save to finish before reloading
+      await saveGames();
+      await saveCommanderData();
       localStorage.setItem(RAGE_QUIT_KEY, JSON.stringify(rageQuits));
+      if (supabase) {
+        await supabase.from('mtg_state').upsert({ id: 'rage_quits', data: rageQuits });
+      }
       location.reload(); // Refresh to re-initialize everything
     }
   } catch (e) {
