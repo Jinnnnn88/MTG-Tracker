@@ -285,11 +285,9 @@ function renderCommanderLibrary(filterText = '') {
   const allCommanders = Object.keys(commanderData).sort();
 
   // Update datalist for autofill suggestions
-  const datalist = document.getElementById('library-commander-list');
-  if (datalist) {
-    datalist.innerHTML = allCommanders
-      .filter(name => name.toLowerCase() !== query)
-      .map(name => `<option value="${escapeHtml(name)}">`).join('');
+  const libraryDatalist = document.getElementById('library-commander-list');
+  if (libraryDatalist) {
+    libraryDatalist.innerHTML = allCommanders.map(name => `<option value="${escapeHtml(name)}">`).join('');
   }
 
   const filteredCommanders = allCommanders.filter(name => name.toLowerCase().includes(query));
@@ -1297,15 +1295,10 @@ window.addEventListener('load', () => {
       safeAddListener(`commander-${field.key}`, 'input', async (e) => {
         const query = e.target.value;
         clearTimeout(autocompleteTimers[field.key]);
-        if (query.length < 3) { populateCommanderDataLists(); return; }
+        if (query.length < 3) { return; } // Don't fetch Scryfall for very short queries
         autocompleteTimers[field.key] = setTimeout(async () => {
           const suggestions = await fetchScryfallAutocomplete(query);
-          if (suggestions.length > 0) {
-            const list = document.getElementById(`commanders-${field.key}-list`);
-            const currentHtml = list.innerHTML;
-            const newOptions = suggestions.filter(name => !currentHtml.includes(`value="${escapeHtml(name)}"`)).map(name => `<option value="${escapeHtml(name)}">`).join('');
-            list.innerHTML += newOptions;
-          }
+          updateCommanderDatalistsWithScryfall(suggestions);
         }, 300);
       });
 
@@ -1427,12 +1420,55 @@ window.addEventListener('load', () => {
       const rInput = document.getElementById('rage-quit-reason'); const dInput = document.getElementById('rage-quit-date');
       const reason = rInput ? rInput.value.trim() : ''; const date = dInput ? dInput.value : '';
       
+      const rqData = { date, reason };
+      if (currentRageQuitIndex !== null && rageQuits[currentRageQuitIndex]) {
+          rqData.id = rageQuits[currentRageQuitIndex].id;
+      }
+
       showLoading();
-      await sb.from('rage_quits').upsert({ date, reason });
-      if (rInput) rInput.value = ''; 
+      await sb.from('rage_quits').upsert(rqData);
+      
+      currentRageQuitIndex = null;
+      if (rInput) rInput.value = '';
+      const cancelBtn = document.getElementById('cancel-rage-edit');
+      if (cancelBtn) cancelBtn.style.display = 'none';
+      document.getElementById('record-rage-quit').textContent = 'RECORD RAGE QUIT';
+
       await loadAllData();
       showToast('The salt has been recorded.', 'success');
       hideLoading();
+    });
+
+    safeAddListener('cancel-rage-edit', 'click', () => {
+      currentRageQuitIndex = null;
+      document.getElementById('rage-quit-reason').value = '';
+      document.getElementById('rage-quit-date').value = new Date().toISOString().split('T')[0];
+      document.getElementById('cancel-rage-edit').style.display = 'none';
+      document.getElementById('record-rage-quit').textContent = 'RECORD RAGE QUIT';
+    });
+
+    safeAddListener('rage-quit-history-list', 'click', event => {
+      if (event.target.matches('.delete-rage-quit')) {
+        const index = Number(event.target.dataset.index);
+        if (confirm('Delete this salt record?')) {
+            const id = rageQuits[index].id;
+            showLoading();
+            sb.from('rage_quits').delete().eq('id', id).then(() => {
+                loadAllData();
+                showToast('Salt record deleted.', 'info');
+            });
+        }
+      }
+      if (event.target.matches('.edit-rage-quit')) {
+        const index = Number(event.target.dataset.index);
+        const rq = rageQuits[index];
+        currentRageQuitIndex = index;
+        document.getElementById('rage-quit-date').value = rq.date;
+        document.getElementById('rage-quit-reason').value = rq.reason || '';
+        document.getElementById('cancel-rage-edit').style.display = 'block';
+        document.getElementById('record-rage-quit').textContent = 'UPDATE RAGE QUIT';
+        window.scrollTo({ top: document.getElementById('salt-recording-ui').offsetTop - 100, behavior: 'smooth' });
+      }
     });
 
     safeAddListener('stats-dashboard', 'click', event => {
