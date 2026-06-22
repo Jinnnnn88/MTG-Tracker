@@ -273,14 +273,25 @@
         align-items: flex-end; /* Right-align text and bars */
       }
 
-      /* Eliminate dead space by expanding the first column and right-aligning the last */
-      .stats-table-container table th:first-child,
-      .stats-table-container table td:first-child {
-        width: 100%;
-      }
+      /* Align the last column to the right and prevent wrapping */
       .stats-table-container table th:last-child,
       .stats-table-container table td:last-child {
         text-align: right;
+        width: 1%;
+        white-space: nowrap;
+      }
+
+      /* Prevent first column from wrapping */
+      .stats-table-container table th:first-child,
+      .stats-table-container table td:first-child {
+        white-space: nowrap;
+        width: 1%;
+      }
+
+      /* In a 2-column table, expand the first column to fill remaining space */
+      .stats-table-container table th:first-child:nth-last-child(2),
+      .stats-table-container table td:first-child:nth-last-child(2) {
+        width: 100%;
       }
 
       .win-rate-bar-bg {
@@ -852,6 +863,76 @@
         grid-column: 1 / -1;
       }
 
+      .activity-panel {
+        height: auto;
+      }
+
+      .activity-card-body {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) minmax(220px, 280px);
+        gap: 20px;
+        align-items: stretch;
+        min-height: 240px;
+      }
+
+      .activity-chart {
+        min-width: 0;
+      }
+
+      .activity-days {
+        border-left: 1px solid var(--border-color);
+        padding-left: 20px;
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
+        gap: 10px;
+      }
+
+      .activity-days-title {
+        font-size: 0.75rem;
+        font-weight: 800;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+        color: var(--muted-text);
+      }
+
+      .active-day-list {
+        display: grid;
+        gap: 8px;
+      }
+
+      .active-day-row {
+        display: grid;
+        grid-template-columns: 44px minmax(80px, 1fr) auto;
+        gap: 8px;
+        align-items: center;
+        font-size: 0.85rem;
+      }
+
+      .active-day-label {
+        font-weight: 700;
+        color: var(--header-text);
+      }
+
+      .active-day-bar-bg {
+        height: 8px;
+        border-radius: 999px;
+        background: var(--border-color);
+        overflow: hidden;
+      }
+
+      .active-day-bar-fill {
+        height: 100%;
+        border-radius: inherit;
+        background: var(--accent-blue);
+      }
+
+      .active-day-count {
+        color: var(--muted-text);
+        font-weight: 700;
+        white-space: nowrap;
+      }
+
       #stats-dashboard.stats-grid {
         grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
       }
@@ -1237,6 +1318,17 @@
           grid-template-columns: 1fr !important;
         }
 
+        .activity-card-body {
+          grid-template-columns: 1fr;
+        }
+
+        .activity-days {
+          border-left: 0;
+          border-top: 1px solid var(--border-color);
+          padding-left: 0;
+          padding-top: 16px;
+        }
+
         .nav-item {
           padding: 8px 12px;
           font-size: 0.85rem;
@@ -1284,7 +1376,7 @@
         <div class="grid player-grid">
           <div class="player-row">
             <div class="player-row-inputs">
-              <h4>First</h4> <!-- Changed to h4 -->
+              <h4>Seat 1 (1st to Play)</h4> <!-- Changed to h4 -->
               <label for="player-first-name">Player Name</label>
               <input type="text" id="player-first-name" placeholder="Player name" list="player-first-names-list">
               <label for="commander-first">Commander</label>
@@ -1298,7 +1390,7 @@
 
           <div class="player-row">
             <div class="player-row-inputs">
-              <h4>Second</h4> <!-- Changed to h4 -->
+              <h4>Seat 2 (2nd to Play)</h4> <!-- Changed to h4 -->
               <label for="player-second-name">Player Name</label>
               <input type="text" id="player-second-name" placeholder="Player name" list="player-second-names-list">
               <label for="commander-second">Commander</label>
@@ -1312,7 +1404,7 @@
 
           <div class="player-row">
             <div class="player-row-inputs">
-              <h4>Third</h4> <!-- Changed to h4 -->
+              <h4>Seat 3 (3rd to Play)</h4> <!-- Changed to h4 -->
               <label for="player-third-name">Player Name</label>
               <input type="text" id="player-third-name" placeholder="Player name" list="player-third-names-list">
               <label for="commander-third">Commander</label>
@@ -1326,7 +1418,7 @@
 
           <div class="player-row">
             <div class="player-row-inputs">
-              <h4>Last</h4> <!-- Changed to h4 -->
+              <h4>Seat 4 (Last to Play)</h4> <!-- Changed to h4 -->
               <label for="player-last-name">Player Name</label>
               <input type="text" id="player-last-name" placeholder="Player name" list="player-last-names-list">
               <label for="commander-last">Commander</label>
@@ -1388,15 +1480,23 @@
         <p class="section-description">Win rates and performance metrics</p>
         <div id="stats-dashboard" class="stats-grid"></div>
         <div id="stats-charts" class="stats-charts stats-grid">
-          <div class="chart-panel chart-panel-wide">
+          <div class="chart-panel chart-panel-wide activity-panel">
             <div class="chart-header">
-              <h3 id="main-chart-title" style="margin-bottom: 0;">Weekly Games</h3>
+              <h3 id="main-chart-title" style="margin-bottom: 0;">Game Activity</h3>
               <div class="toggle-group">
                 <button id="toggle-weekly" class="toggle-btn active">Weekly</button>
                 <button id="toggle-monthly" class="toggle-btn">Monthly</button>
               </div>
             </div>
-            <canvas id="monthly-games-chart"></canvas>
+            <div class="activity-card-body">
+              <div class="activity-chart">
+                <canvas id="monthly-games-chart"></canvas>
+              </div>
+              <div class="activity-days">
+                <div class="activity-days-title">Most Active Days</div>
+                <div id="active-days-table-content" class="active-day-list"></div>
+              </div>
+            </div>
           </div>
         </div>
         <div id="stats-tables" class="stats-grid">
@@ -1420,19 +1520,10 @@
             <p id="color-stats-info" style="font-size: 0.75rem; color: var(--muted-text); margin-top: -8px; margin-bottom: 8px;">Showing Top 10</p>
             <div id="color-statistics-table-content"></div>
           </div>
+
           <div class="stats-panel">
-            <div class="stats-header-row">
-              <h3 style="margin:0;">Signature Pairings</h3>
-              <div style="display: flex; gap: 8px; align-items: center;">
-                <div class="toggle-group">
-                  <button id="toggle-pair-rate" class="toggle-btn active">Win Rate</button>
-                  <button id="toggle-pair-games" class="toggle-btn">Games</button>
-                </div>
-                <input type="text" id="pair-stats-search" list="stats-pair-list" placeholder="Search pairings..." style="max-width: 200px; margin:0; padding: 6px 10px; font-size: 0.8rem;">
-              </div>
-            </div>
-            <p id="pair-stats-info" style="font-size: 0.75rem; color: var(--muted-text); margin-top: -8px; margin-bottom: 8px;">Showing Top 10</p>
-            <div id="pair-stats-table-content"></div>
+            <h3>Deck Diversity</h3>
+            <div id="deck-diversity-table-content"></div>
           </div>
         </div>
       </div>
@@ -1448,7 +1539,7 @@
     <datalist id="commanders-last-list"></datalist>
     <datalist id="stats-commander-list"></datalist>
     <datalist id="stats-color-list"></datalist>
-    <datalist id="stats-pair-list"></datalist>
+
     <datalist id="library-commander-list"></datalist>
 
     <div id="tab-library" class="tab-content">

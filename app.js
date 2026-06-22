@@ -25,8 +25,6 @@ let chartInstances = {};
 let chartViewMode = 'weekly'; // Track current chart view state
 let commanderSearchQuery = '';
 let colorSearchQuery = '';
-let pairSearchQuery = '';
-let pairSortMode = 'rate'; // 'rate' or 'games'
 
 // --- UI Feedback Helpers ---
 let loadingCount = 0;
@@ -250,13 +248,23 @@ async function fetchCommanderImage(commanderName) {
 async function fetchScryfallAutocomplete(query) {
   if (query.length < 3) return [];
   try {
-    const response = await fetch(`https://api.scryfall.com/cards/autocomplete?q=${encodeURIComponent(query)}`);
+    const url = `https://api.scryfall.com/cards/search?q=is:commander+name:${encodeURIComponent(query)}`;
+    const response = await fetch(url);
     if (!response.ok) return [];
     const data = await response.json();
-    return data.data || [];
+    if (data.data && Array.isArray(data.data)) {
+      return data.data.map(card => card.name);
+    }
+    return [];
   } catch (error) {
     return [];
   }
+}
+
+function updateCommanderDatalistWithScryfall(key, suggestions) {
+  const list = document.getElementById(`commanders-${key}-list`);
+  if (!list) return;
+  list.innerHTML = suggestions.map(name => `<option value="${escapeHtml(name)}">`).join('');
 }
 
 function updatePortraitPreview(position) {
@@ -486,12 +494,14 @@ function calculateStats() {
   const playerStats = {};
   const commanderStats = {};
   const seatStats = {};
-  const pairStats = {};
   const colorStats = {};
   const monthlyGames = {};
   const weeklyGames = {};
   const playerMatchups = {}; // { playerA: { playerB: { gamesTogether: 0, opponentWins: 0 } } }
   const commanderMatchups = {}; // { cmdA: { cmdB: { games: 0, winsAgainst: 0 } } }
+  const playerRivalries = {}; // { "PlayerA vs PlayerB": { games: 0, wins: { PlayerA: 0, PlayerB: 0 } } }
+  const deckDiversityStats = {}; // { playerName: { games: 0, commanders: Set } }
+  const dayOfWeekStats = { 'Sunday': 0, 'Monday': 0, 'Tuesday': 0, 'Wednesday': 0, 'Thursday': 0, 'Friday': 0, 'Saturday': 0 };
 
   games.forEach(game => {
     if (game.date) {
@@ -500,6 +510,34 @@ function calculateStats() {
 
       const week = getStartOfWeek(game.date);
       weeklyGames[week] = (weeklyGames[week] || 0) + 1;
+
+      const days = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+      const [y, m, d] = game.date.split('-').map(Number);
+      if (y && m && d) {
+        const dayIndex = new Date(y, m - 1, d).getDay();
+        const dayName = days[dayIndex];
+        dayOfWeekStats[dayName] = (dayOfWeekStats[dayName] || 0) + 1;
+      }
+    }
+
+    // Calculate player rivalries
+    const validPlayers = game.players.filter(p => p.name).map(p => titleCase(p.name));
+    const winner = game.players.find(p => p.isWinner);
+    const winnerName = winner && winner.name ? titleCase(winner.name) : null;
+    
+    for (let i = 0; i < validPlayers.length; i++) {
+      for (let j = i + 1; j < validPlayers.length; j++) {
+        const pA = validPlayers[i];
+        const pB = validPlayers[j];
+        const key = [pA, pB].sort().join(' vs ');
+        
+        if (!playerRivalries[key]) {
+          playerRivalries[key] = { games: 0, wins: { [pA]: 0, [pB]: 0 } };
+        }
+        playerRivalries[key].games++;
+        if (winnerName === pA) playerRivalries[key].wins[pA]++;
+        if (winnerName === pB) playerRivalries[key].wins[pB]++;
+      }
     }
 
     game.players.forEach(player => {
@@ -508,7 +546,6 @@ function calculateStats() {
       const playerKey = player.name;
       const commanderKey = player.commander;
       const seatLabel = seatFields.find(f => f.seat === player.seat)?.key || player.seat;
-      const pairKey = `${player.name}|${player.commander}`;
       const isWin = player.isWinner;
 
       // Track Player Matchups
@@ -538,10 +575,14 @@ function calculateStats() {
         }
       });
 
-      if (!playerStats[playerKey]) playerStats[playerKey] = { ...emptyPlacementStats(), currentStreak: 0, maxStreak: 0, giantSlays: 0 };
+      if (!playerStats[playerKey]) playerStats[playerKey] = { ...emptyPlacementStats(), currentStreak: 0, maxStreak: 0, giantSlays: 0, commanders: {} };
       if (!commanderStats[commanderKey]) commanderStats[commanderKey] = emptyPlacementStats();
       if (!seatStats[seatLabel]) seatStats[seatLabel] = { games: 0, wins: 0 };
-      if (!pairStats[pairKey]) pairStats[pairKey] = { player: player.name, commander: player.commander, games: 0, wins: 0 };
+      if (!deckDiversityStats[playerKey]) deckDiversityStats[playerKey] = { games: 0, commanders: new Set() };
+
+      playerStats[playerKey].commanders[commanderKey] = (playerStats[playerKey].commanders[commanderKey] || 0) + 1;
+      deckDiversityStats[playerKey].games += 1;
+      deckDiversityStats[playerKey].commanders.add(commanderKey);
 
       [playerStats[playerKey], commanderStats[commanderKey]].forEach(stats => {
         stats.games += 1;
@@ -549,10 +590,8 @@ function calculateStats() {
       });
       
       seatStats[seatLabel].games += 1;
-      pairStats[pairKey].games += 1;
       if (isWin) {
         seatStats[seatLabel].wins += 1;
-        pairStats[pairKey].wins += 1;
       }
 
       const colors = getCommanderColors(player.commander);
@@ -581,8 +620,8 @@ function calculateStats() {
     game.players.forEach(p => {
       if (!p.name || !playerStats[p.name]) return;
       if (p.isWinner) {
-        // Check if winner ended any opponent's streak of 5 or more
-        const killedGiant = game.players.some(opp => opp.name !== p.name && preGameStreaks[opp.name] >= 5);
+        // Check if winner ended any opponent's streak of 3 or more
+        const killedGiant = game.players.some(opp => opp.name !== p.name && preGameStreaks[opp.name] >= 3);
         if (killedGiant) {
           playerStats[p.name].giantSlays += 1;
         }
@@ -594,7 +633,18 @@ function calculateStats() {
     });
   });
 
-  return { playerStats, commanderStats, seatStats, pairStats, colorStats, monthlyGames, weeklyGames, commanderMatchups, playerMatchups };
+  const deckDiversity = Object.fromEntries(
+    Object.entries(deckDiversityStats).map(([playerName, stats]) => [
+      playerName,
+      {
+        games: stats.games,
+        uniqueCommanders: stats.commanders.size,
+        diversityRate: stats.games ? stats.commanders.size / stats.games : 0
+      }
+    ])
+  );
+
+  return { playerStats, commanderStats, seatStats, colorStats, monthlyGames, weeklyGames, commanderMatchups, playerMatchups, playerRivalries, dayOfWeekStats, deckDiversity };
 }
 
 function renderStatCard(icon, label, value, subtitle, detailsHtml = '', extraClass = '') {
@@ -693,10 +743,10 @@ function renderStatsDashboard(stats = calculateStats()) {
     dashboard.innerHTML = `
       ${renderStatCard('&#x1F3AE;', 'Total Games', games.length, 'Games stored')}
       ${renderStatCard('&#x2694;&#xFE0F;', 'Classic Rivalry', rivalryLabel, rivalry.games > 0 ? `${rivalry.games} Encounters` : 'No data')}
-      ${renderStatCard('&#x1F525;', 'Current Hottest Streak', hottestPlayer ? escapeHtml(hottestPlayer[0]) : 'N/A', hottestPlayer ? `${hottestPlayer[1].currentStreak} Wins Row` : 'No active streaks', hottestPlayersDetails, hottestCardClass)}
-      ${renderStatCard('&#x1F3C6;', 'Top Player', topPlayer ? escapeHtml(topPlayer[0]) : 'N/A', `${topPlayer ? topPlayer[1].wins : 0} Wins`, topPlayersDetails)}
-      ${renderStatCard('&#x1F451;', 'Top Commander', topCommander ? escapeHtml(topCommander[0]) : 'N/A', `${topCommander ? topCommander[1].wins : 0} Wins`, topCommandersDetails)}
-      ${renderStatCard('&#x1F525;', 'Best Win Rate', bestCommander ? escapeHtml(bestCommander[0]) : 'N/A', bestCommander ? `${((bestCommander[1].wins / bestCommander[1].games) * 100).toFixed(0)}%` : 'Needs 5 games')}
+      ${renderStatCard('&#x1F525;', 'Current Hottest Streak', hottestPlayer ? `<span class="player-link" data-player-detail="${escapeHtml(hottestPlayer[0])}">${escapeHtml(hottestPlayer[0])}</span>` : 'N/A', hottestPlayer ? `${hottestPlayer[1].currentStreak} Wins Row` : 'No active streaks', hottestPlayersDetails, hottestCardClass)}
+      ${renderStatCard('&#x1F3C6;', 'Top Player', topPlayer ? `<span class="player-link" data-player-detail="${escapeHtml(topPlayer[0])}">${escapeHtml(topPlayer[0])}</span>` : 'N/A', `${topPlayer ? topPlayer[1].wins : 0} Wins`, topPlayersDetails)}
+      ${renderStatCard('&#x1F451;', 'Top Commander', topCommander ? commanderCell(topCommander[0]) : 'N/A', `${topCommander ? topCommander[1].wins : 0} Wins`, topCommandersDetails)}
+      ${renderStatCard('&#x1F525;', 'Best Win Rate', bestCommander ? commanderCell(bestCommander[0]) : 'N/A', bestCommander ? `${((bestCommander[1].wins / bestCommander[1].games) * 100).toFixed(0)}%` : 'Needs 5 games')}
     `;
   }
 }
@@ -752,6 +802,34 @@ function renderTable(title, headers, data, sortFn, rowFn) {
   `;
 }
 
+function renderActiveDaysSummary(dayOfWeekStats) {
+  const sortedDays = Object.entries(dayOfWeekStats).sort((a, b) => b[1] - a[1]);
+  const maxGames = Math.max(...sortedDays.map(([, total]) => total), 1);
+  const shortDayNames = {
+    Sunday: 'Sun',
+    Monday: 'Mon',
+    Tuesday: 'Tue',
+    Wednesday: 'Wed',
+    Thursday: 'Thu',
+    Friday: 'Fri',
+    Saturday: 'Sat'
+  };
+
+  return sortedDays.map(([day, total]) => {
+    const pct = games.length > 0 ? Math.round((total / games.length) * 100) : 0;
+    const barWidth = Math.round((total / maxGames) * 100);
+    return `
+      <div class="active-day-row">
+        <div class="active-day-label">${escapeHtml(shortDayNames[day] || day)}</div>
+        <div class="active-day-bar-bg">
+          <div class="active-day-bar-fill" style="width: ${barWidth}%"></div>
+        </div>
+        <div class="active-day-count">${total} <small>(${pct}%)</small></div>
+      </div>
+    `;
+  }).join('');
+}
+
 function renderStats() {
   if (!games.length) {
     const dashboard = document.getElementById('stats-dashboard');
@@ -762,7 +840,9 @@ function renderStats() {
     setHtml('commander-stats-table-content', '');
     setHtml('seat-advantage-table-content', '');
     setHtml('color-statistics-table-content', '');
-    setHtml('pair-stats-table-content', '');
+    setHtml('giant-slayers-table-content', '');
+    setHtml('deck-diversity-table-content', '');
+    setHtml('active-days-table-content', '');
     return;
   }
 
@@ -823,55 +903,20 @@ function renderStats() {
     (a, b) => b[1].wins - a[1].wins || a[1].appearances - b[1].appearances,
     ([k, v]) => `<tr><td>${escapeHtml(k)}</td><td>${winRateCell(v.wins, v.appearances)}</td></tr>`);
 
-  // --- Player + Commander Stats Search Logic ---
-  const pairQuery = pairSearchQuery.trim().toLowerCase();
-  const filteredPairs = Object.entries(stats.pairStats)
-    .filter(([key, v]) => {
-      if (!pairQuery) return true;
-      const combined = `${v.player}: ${v.commander}`.toLowerCase();
-      return combined.includes(pairQuery) || v.player.toLowerCase().includes(pairQuery) || v.commander.toLowerCase().includes(pairQuery);
-    });
+  const deckDiversityTable = document.getElementById('deck-diversity-table-content');
+  if (deckDiversityTable) {
+    deckDiversityTable.innerHTML = renderTable('Deck Diversity', ['Player', 'Decks Used'], stats.deckDiversity,
+      (a, b) => b[1].uniqueCommanders - a[1].uniqueCommanders || b[1].diversityRate - a[1].diversityRate || b[1].games - a[1].games,
+      ([k, v]) => `<tr>
+        <td><span class="player-link" data-player-detail="${escapeHtml(k)}">${escapeHtml(k)}</span></td>
+        <td>${v.uniqueCommanders} unique <small style="color:var(--muted-text)">(${v.games} games, ${Math.round(v.diversityRate * 100)}%)</small></td>
+      </tr>`);
+  }
 
-  let finalPairs = filteredPairs.sort((a, b) => {
-    if (pairSortMode === 'games') return b[1].games - a[1].games || b[1].wins - a[1].wins;
-    return b[1].wins - a[1].wins || a[1].games - b[1].games;
-  });
-  if (!pairQuery) finalPairs = finalPairs.slice(0, 10);
-
-  // Suggestions: ONLY populate if user has started typing
-  const pairSuggestionsHtml = pairQuery
-    ? filteredPairs.filter(([, v]) => (v.player + ': ' + v.commander).toLowerCase() !== pairQuery).slice(0, 15).map(([key, v]) => `<option value="${escapeHtml(v.player + ': ' + v.commander)}">`).join('')
-    : '';
-  const pairDatalist = document.getElementById('stats-pair-list');
-  if (pairDatalist && pairDatalist.innerHTML !== pairSuggestionsHtml) pairDatalist.innerHTML = pairSuggestionsHtml;
-
-  const pairInfo = document.getElementById('pair-stats-info');
-  if (pairInfo) pairInfo.textContent = pairQuery ? `Found ${filteredPairs.length}` : 'Showing Top 10';
-  
-  const pairTable = document.getElementById('pair-stats-table-content');
-  if (pairTable) pairTable.innerHTML = renderTable('Player + Commander Stats', ['Signature Pairing', 'Performance'], Object.fromEntries(finalPairs),
-    () => 0, // Sort handled above
-    ([k, v]) => {
-      const image = getCommanderImage(v.commander);
-      const portraitHtml = image 
-        ? `<img src="${escapeHtml(image)}" alt="${escapeHtml(v.commander)}" style="width: 36px; height: 36px; border-radius: 6px; object-fit: cover; flex-shrink: 0; border: 1px solid var(--border-color);">`
-        : `<div style="width: 36px; height: 36px; border-radius: 6px; background: var(--input-bg); border: 1px dashed var(--border-color); display: flex; align-items: center; justify-content: center; font-size: 0.8rem; flex-shrink: 0;">📷</div>`;
-
-      return `<tr>
-      <td>
-        <div style="display: flex; align-items: center; gap: 12px;">
-          ${portraitHtml}
-          <div style="min-width: 0;">
-            <div class="player-link" data-player-detail="${escapeHtml(v.player)}" style="font-weight:700;">${escapeHtml(v.player)}</div>
-            <div style="font-size:0.82rem; color:var(--muted-text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">
-              ${commanderCell(v.commander)}
-            </div>
-          </div>
-        </div>
-      </td>
-      <td>${winRateCell(v.wins, v.games)}</td>
-    </tr>`;
-    });
+  const activeDaysTable = document.getElementById('active-days-table-content');
+  if (activeDaysTable) {
+    activeDaysTable.innerHTML = renderActiveDaysSummary(stats.dayOfWeekStats);
+  }
 }
 
 function destroyCharts() {
@@ -1246,6 +1291,12 @@ function updateThemeToggleButton(theme) {
 
 function updateBountyIcons() {
   const stats = calculateStats();
+  const seatLabels = {
+    first: 'Seat 1 (1st to Play)',
+    second: 'Seat 2 (2nd to Play)',
+    third: 'Seat 3 (3rd to Play)',
+    last: 'Seat 4 (Last to Play)'
+  };
   seatFields.forEach(field => {
     const nameInput = document.getElementById(`player-${field.key}-name`);
     const label = nameInput?.parentElement?.querySelector('h4');
@@ -1253,7 +1304,8 @@ function updateBountyIcons() {
     
     const playerName = titleCase(nameInput.value);
     const streak = stats.playerStats[playerName]?.currentStreak || 0;
-    label.innerHTML = `${field.key.charAt(0).toUpperCase() + field.key.slice(1)} ${streak >= 3 ? `<span title="Bounty Active: ${streak} Win Streak" style="cursor:help;">🎯</span>` : ''}`;
+    const seatLabelText = seatLabels[field.key] || field.key;
+    label.innerHTML = `${seatLabelText} ${streak >= 3 ? `<span title="Bounty Active: ${streak} Win Streak" style="cursor:help;">🎯</span>` : ''}`;
   });
 }
 
@@ -1295,10 +1347,13 @@ window.addEventListener('load', () => {
       safeAddListener(`commander-${field.key}`, 'input', async (e) => {
         const query = e.target.value;
         clearTimeout(autocompleteTimers[field.key]);
-        if (query.length < 3) { return; } // Don't fetch Scryfall for very short queries
+        if (query.length < 3) {
+          populateCommanderDataLists(); // Revert to showing local recorded commanders
+          return;
+        }
         autocompleteTimers[field.key] = setTimeout(async () => {
           const suggestions = await fetchScryfallAutocomplete(query);
-          updateCommanderDatalistsWithScryfall(suggestions);
+          updateCommanderDatalistWithScryfall(field.key, suggestions);
         }, 300);
       });
 
@@ -1334,10 +1389,7 @@ window.addEventListener('load', () => {
     safeAddListener('history-search', 'input', (e) => renderGameHistory(e.target.value));
     safeAddListener('commander-stats-search', 'input', (e) => { commanderSearchQuery = e.target.value; renderStats(); });
     safeAddListener('color-stats-search', 'input', (e) => { colorSearchQuery = e.target.value; renderStats(); });
-    safeAddListener('pair-stats-search', 'input', (e) => { pairSearchQuery = e.target.value; renderStats(); });
     safeAddListener('library-search', 'input', (e) => renderCommanderLibrary(e.target.value));
-    safeAddListener('toggle-pair-rate', 'click', () => { pairSortMode = 'rate'; document.getElementById('toggle-pair-rate').classList.add('active'); document.getElementById('toggle-pair-games').classList.remove('active'); renderStats(); });
-    safeAddListener('toggle-pair-games', 'click', () => { pairSortMode = 'games'; document.getElementById('toggle-pair-games').classList.add('active'); document.getElementById('toggle-pair-rate').classList.remove('active'); renderStats(); });
     safeAddListener('export-data-btn', 'click', exportData);
     safeAddListener('import-data-btn', 'click', () => document.getElementById('import-file-input').click());
     safeAddListener('import-file-input', 'change', (e) => {
@@ -1378,14 +1430,25 @@ window.addEventListener('load', () => {
         }
     });
 
-    safeAddListener('game-history-list', 'click', event => {
-      const c = event.target.closest('[data-commander-detail]'); if (c) return openCommanderModal(c.dataset.commanderDetail);
-      const p = event.target.closest('[data-player-detail]'); if (p) return openPlayerModal(p.dataset.playerDetail);
+    safeAddListener('game-history-list', 'click', async event => {
       if (event.target.matches('.delete-game')) {
         const index = Number(event.target.dataset.index);
         if (confirm('Delete entry?')) {
             const gameId = games[index].id;
-            sb.from('games').delete().eq('id', gameId).then(() => loadAllData());
+            showLoading();
+            try {
+                const { error } = await sb.from('games').delete().eq('id', gameId);
+                if (error) {
+                    notifyError("Error deleting game: " + error.message);
+                } else {
+                    await loadAllData();
+                    showToast('Game deleted.', 'info');
+                }
+            } catch (err) {
+                notifyError("Error deleting game: " + err.message);
+            } finally {
+                hideLoading();
+            }
         }
       }
       if (event.target.matches('.edit-game')) {
@@ -1402,16 +1465,24 @@ window.addEventListener('load', () => {
       }
     });
 
-    safeAddListener('commander-library', 'click', event => {
-      const c = event.target.closest('[data-commander-detail]'); if (c) return openCommanderModal(c.dataset.commanderDetail);
+    safeAddListener('commander-library', 'click', async event => {
       if (event.target.matches('.delete-commander-image')) {
         const name = event.target.dataset.commander; 
         if (confirm(`Delete art for ${name}?`)) {
             showLoading();
-            sb.from('commander_data').delete().eq('name', name).then(() => {
-                loadAllData();
-                showToast('Art cache removed.', 'info');
-            });
+            try {
+                const { error } = await sb.from('commander_data').delete().eq('name', name);
+                if (error) {
+                    notifyError("Error removing art cache: " + error.message);
+                } else {
+                    await loadAllData();
+                    showToast('Art cache removed.', 'info');
+                }
+            } catch (err) {
+                notifyError("Error removing art cache: " + err.message);
+            } finally {
+                hideLoading();
+            }
         }
       }
     });
@@ -1447,16 +1518,25 @@ window.addEventListener('load', () => {
       document.getElementById('record-rage-quit').textContent = 'RECORD RAGE QUIT';
     });
 
-    safeAddListener('rage-quit-history-list', 'click', event => {
+    safeAddListener('rage-quit-history-list', 'click', async event => {
       if (event.target.matches('.delete-rage-quit')) {
         const index = Number(event.target.dataset.index);
         if (confirm('Delete this salt record?')) {
             const id = rageQuits[index].id;
             showLoading();
-            sb.from('rage_quits').delete().eq('id', id).then(() => {
-                loadAllData();
-                showToast('Salt record deleted.', 'info');
-            });
+            try {
+                const { error } = await sb.from('rage_quits').delete().eq('id', id);
+                if (error) {
+                    notifyError("Error deleting salt record: " + error.message);
+                } else {
+                    await loadAllData();
+                    showToast('Salt record deleted.', 'info');
+                }
+            } catch (err) {
+                notifyError("Error deleting salt: " + err.message);
+            } finally {
+                hideLoading();
+            }
         }
       }
       if (event.target.matches('.edit-rage-quit')) {
@@ -1471,9 +1551,17 @@ window.addEventListener('load', () => {
       }
     });
 
-    safeAddListener('stats-dashboard', 'click', event => {
-      const p = event.target.closest('[data-player-detail]'); if (p) return openPlayerModal(p.dataset.playerDetail);
-      const c = event.target.closest('[data-commander-detail]'); if (c) return openCommanderModal(c.dataset.commanderDetail);
+    document.body.addEventListener('click', event => {
+      const c = event.target.closest('[data-commander-detail]');
+      if (c) {
+        openCommanderModal(c.dataset.commanderDetail);
+        return;
+      }
+      const p = event.target.closest('[data-player-detail]');
+      if (p) {
+        openPlayerModal(p.dataset.playerDetail);
+        return;
+      }
     });
 
     safeAddListener('commander-modal-close', 'click', closeCommanderModal);
