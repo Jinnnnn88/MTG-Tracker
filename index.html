@@ -6,6 +6,10 @@
     <link rel="icon" href="data:,">
     <title>MTG Game Tracker</title>
     <style>
+      *, *::before, *::after {
+        box-sizing: border-box;
+      }
+
       :root {
         --bg-color: #f8fafc;
         --card-bg: #ffffff;
@@ -261,8 +265,11 @@
       .stats-table-container {
         max-height: 420px;
         overflow-y: auto;
+        overflow-x: auto;
+        -webkit-overflow-scrolling: touch;
         border-radius: 8px;
         border: 1px solid var(--border-color);
+        width: 100%;
       }
 
       .win-rate-wrapper {
@@ -495,7 +502,7 @@
 
       .history-player {
         display: grid; /* Changed to grid for better control */
-        grid-template-columns: 74px 1fr; /* Two columns: portrait and info */
+        grid-template-columns: 74px minmax(0, 1fr); /* Two columns: portrait and info */
         align-items: center;
         text-align: left; /* Align text left */
         gap: 10px;
@@ -509,6 +516,7 @@
       .history-player-info { /* New container for player name and commander */
         display: grid;
         gap: 4px;
+        min-width: 0;
       }
       .history-player-position { /* Position label for player */
         font-size: 0.82rem;
@@ -1140,58 +1148,35 @@
       [data-theme="dark"] .pill-G { background: rgba(52, 211, 153, 0.1); color: #34d399; border-color: rgba(52, 211, 153, 0.3); }
 
       #commander-library {
-        display: flex;
+        display: grid;
+        grid-template-columns: repeat(5, 1fr);
         gap: 12px;
-        overflow-x: auto;
         padding: 12px 0;
-        scroll-behavior: smooth;
-        scroll-snap-type: x mandatory;
-      }
-
-      #commander-library::-webkit-scrollbar {
-        height: 8px;
-      }
-
-      #commander-library::-webkit-scrollbar-thumb {
-        background: rgba(0, 0, 0, 0.15);
-        border-radius: 999px;
-      }
-
-      #commander-library::-webkit-scrollbar-track {
-        background: transparent;
       }
 
       .commander-card {
         border: 1px solid var(--border-color);
-        border-radius: 6px;
+        border-radius: 10px;
         padding: 10px;
         text-align: center;
         background: var(--card-bg);
-        transition: all 0.2s;
-        flex-shrink: 0;
-        width: 100px;
-        scroll-snap-align: start;
+        transition: transform 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease;
+        overflow: hidden;
       }
 
       .commander-card:hover {
-        background: var(--row-bg);
         border-color: var(--accent-blue);
-        box-shadow: var(--shadow);
-        transform: translateY(-5px);
-        z-index: 10;
-      }
-
-      .commander-card:hover img {
-        transform: scale(1.15); /* Only the image scales */
-        /* z-index is handled by the parent card's z-index */
+        box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12);
+        transform: translateY(-3px);
       }
 
       .commander-card img {
         width: 100%;
-        height: 100px;
+        height: 160px;
         object-fit: cover;
-        border-radius: 4px;
+        border-radius: 6px;
         margin-bottom: 6px;
+        display: block;
       }
 
       .commander-card-name {
@@ -1278,44 +1263,10 @@
         to { opacity: 0; }
       }
 
-      /* Mobile Specific Adjustments */
-      @media (max-width: 600px) {
-        body {
-          padding: 15px 10px;
-        }
-        
-        .header-container {
-          flex-direction: column;
-          align-items: flex-start;
-          gap: 12px;
-        }
-
-        .header-container h1 {
-          font-size: 1.5rem;
-        }
-
-        .history-grid {
-          justify-content: flex-start;
-        }
-
-        .history-card {
-          width: 85vw; /* Fluid width on mobile */
-        }
-
-        #rage-quit-display {
-          font-size: 2rem !important;
-        }
-
-        #rage-quit-count {
-          font-size: 4rem !important;
-        }
-
-        .player-grid {
-          grid-template-columns: 1fr;
-        }
-
-        .stats-grid {
-          grid-template-columns: 1fr !important;
+      /* ===== Tablet Breakpoint ===== */
+      @media (max-width: 900px) {
+        #commander-library {
+          grid-template-columns: repeat(3, 1fr);
         }
 
         .activity-card-body {
@@ -1329,13 +1280,385 @@
           padding-top: 16px;
         }
 
+        .modal-art {
+          height: 220px;
+        }
+      }
+
+      /* ===== Mobile Breakpoint ===== */
+      @media (max-width: 600px) {
+        body {
+          padding: 12px 8px;
+          overflow-x: hidden;
+        }
+
+        /* --- Header --- */
+        .header-container {
+          flex-direction: column;
+          align-items: stretch;
+          gap: 10px;
+          margin-bottom: 16px;
+        }
+
+        .header-container h1 {
+          font-size: 1.4rem;
+          text-align: center;
+        }
+
+        .header-container > div {
+          display: flex;
+          justify-content: center;
+          gap: 6px;
+        }
+
+        .header-container button {
+          flex: 1;
+          font-size: 0.8rem;
+          padding: 8px 6px;
+          margin: 0;
+        }
+
+        /* --- Navigation --- */
+        .nav-bar {
+          position: static;
+          margin-bottom: 16px;
+          padding: 4px;
+          gap: 4px;
+          border-radius: 12px;
+          border: 1px solid var(--border-color);
+          background: var(--nav-bg);
+          overflow-x: auto;
+          display: flex;
+          box-shadow: none;
+          justify-content: flex-start;
+          -webkit-overflow-scrolling: touch;
+        }
+
         .nav-item {
           padding: 8px 12px;
+          font-size: 0.8rem;
+          text-align: center;
+          flex: 0 0 auto;
+          border-radius: 8px;
+          display: block;
+          line-height: 1.4;
+        }
+
+        /* --- Cards & Layout --- */
+        .main-card {
+          padding: 14px;
+          border-radius: 12px;
+          margin-bottom: 14px;
+        }
+
+        .card-title {
+          font-size: 1.2rem;
+        }
+
+        .section-description {
           font-size: 0.85rem;
         }
 
-        .main-card {
+        /* --- Record Game --- */
+        .player-grid {
+          grid-template-columns: 1fr;
+          gap: 10px;
+        }
+
+        .player-row {
+          padding: 14px;
+        }
+
+        .player-row h4 {
+          font-size: 1rem;
+          margin-bottom: 8px;
+        }
+
+        .commander-portrait-preview {
+          height: 180px;
+        }
+
+        input[type="date"] {
+          max-width: 100%;
+        }
+
+        #save-game {
+          width: 100%;
+          padding: 14px;
+          font-size: 1rem;
+          margin-right: 0;
+        }
+
+        #clear-game,
+        #cancel-edit {
+          width: 100%;
+          margin-right: 0;
+        }
+
+        /* --- History --- */
+        .history-grid {
+          flex-direction: column;
+          overflow-x: visible;
+          scroll-snap-type: none;
+          padding-bottom: 0;
+          gap: 12px;
+        }
+
+        .history-card {
+          width: 100%;
+          flex-shrink: 1;
+          scroll-snap-align: none;
+        }
+
+        .history-card-header {
+          flex-direction: column;
+          gap: 6px;
+        }
+
+        .history-player {
+          grid-template-columns: 50px minmax(0, 1fr);
+          padding: 8px;
+          gap: 8px;
+          font-size: 0.82rem;
+        }
+
+        .history-player-portrait {
+          width: 46px;
+          height: 60px;
+        }
+
+        .history-player-name {
+          font-size: 0.9rem;
+        }
+
+        .history-player-commander {
+          font-size: 0.8rem;
+        }
+
+        .history-actions {
+          flex-direction: row;
+        }
+
+        .history-actions button {
+          flex: 1 1 auto;
+          min-width: 0;
+          font-size: 0.82rem;
+          padding: 10px 8px;
+        }
+
+        #history-pagination {
+          gap: 10px !important;
+        }
+
+        #history-pagination button {
+          padding: 10px 14px;
+          font-size: 0.85rem;
+          margin: 0;
+        }
+
+        /* --- Statistics --- */
+        .stats-grid {
+          grid-template-columns: 1fr !important;
+        }
+
+        #stats-dashboard.stats-grid {
+          grid-template-columns: repeat(2, 1fr) !important;
+          gap: 8px;
+        }
+
+        .stat-card {
+          padding: 12px 10px;
+        }
+
+        .stat-icon {
+          font-size: 1.4rem;
+          margin-bottom: 6px;
+        }
+
+        .stat-label {
+          font-size: 0.7rem;
+        }
+
+        .stat-value {
+          font-size: 1.1rem;
+        }
+
+        .stat-subtitle {
+          font-size: 0.75rem;
+        }
+
+        /* Disable hover-reveal on mobile stat cards — always show main content */
+        .stat-card-details {
+          display: none;
+        }
+
+        .chart-panel {
+          height: auto;
+          min-height: 200px;
+        }
+
+        .chart-panel canvas {
+          height: 180px !important;
+          max-height: 180px;
+          flex: 0 0 180px;
+        }
+
+        .chart-header {
+          flex-direction: column;
+          align-items: flex-start;
+          gap: 8px;
+          margin-bottom: 10px;
+        }
+
+        .toggle-group {
+          align-self: flex-start;
+        }
+
+        #stats-tables.stats-grid {
+          flex-direction: column;
+        }
+
+        #stats-tables .stats-panel {
+          flex: 1 1 auto;
+          width: 100%;
+          min-width: 0;
+        }
+
+        .stats-header-row {
+          flex-direction: column;
+          align-items: flex-start;
+          gap: 8px;
+        }
+
+        .stats-header-row input[type="text"] {
+          max-width: 100% !important;
+          width: 100%;
+        }
+
+        .stats-table-container {
+          max-height: 300px;
+        }
+
+        /* --- Commander Library --- */
+        #commander-library {
+          grid-template-columns: repeat(2, 1fr);
+          gap: 8px;
+        }
+
+        .commander-card img {
+          height: 120px;
+        }
+
+        .commander-card-name {
+          font-size: 0.7rem;
+        }
+
+        /* --- Salt Mines --- */
+        #rage-quit-display {
+          font-size: 1.6rem !important;
+        }
+
+        #rage-quit-count {
+          font-size: 3.5rem !important;
+        }
+
+        #salt-recording-ui {
+          padding: 14px !important;
+        }
+
+        #record-rage-quit {
+          font-size: 1rem !important;
+          padding: 16px !important;
+        }
+
+        /* --- Modals --- */
+        .modal-overlay {
+          padding: 0;
+          align-items: flex-end;
+        }
+
+        .commander-modal-content {
+          width: 100%;
+          max-height: 95vh;
+          border-radius: 16px 16px 0 0;
+          animation: slideUp 0.25s ease-out;
+        }
+
+        @keyframes slideUp {
+          from { transform: translateY(100%); }
+          to { transform: translateY(0); }
+        }
+
+        .modal-art {
+          height: 180px;
+        }
+
+        .modal-body-inner {
           padding: 16px;
+          gap: 14px;
+        }
+
+        .modal-body-inner h2 {
+          font-size: 1.3rem;
+        }
+
+        .modal-stats-grid,
+        .modal-date-grid {
+          grid-template-columns: repeat(2, 1fr);
+          gap: 8px;
+        }
+
+        .modal-stat {
+          padding: 10px;
+        }
+
+        .modal-stat-label {
+          font-size: 0.7rem;
+        }
+
+        .modal-stat-value {
+          font-size: 1rem;
+        }
+
+        .modal-close {
+          top: 8px;
+          right: 8px;
+          width: 32px;
+          height: 32px;
+        }
+
+        .modal-pill {
+          font-size: 0.78rem;
+          padding: 5px 8px;
+        }
+
+        .achievement-badge {
+          font-size: 0.8rem;
+          padding: 6px 10px;
+        }
+
+        /* --- Toasts --- */
+        #toast-container {
+          left: 8px;
+          right: 8px;
+          bottom: 16px;
+          transform: none;
+        }
+
+        .toast {
+          min-width: auto;
+          width: 100%;
+          font-size: 0.85rem;
+          padding: 10px 14px;
+        }
+
+        /* --- Tables (general) --- */
+        table {
+          font-size: 0.85rem;
+        }
+
+        th, td {
+          padding: 8px 10px;
         }
       }
     </style>
@@ -1378,9 +1701,9 @@
             <div class="player-row-inputs">
               <h4>Seat 1 (1st to Play)</h4> <!-- Changed to h4 -->
               <label for="player-first-name">Player Name</label>
-              <input type="text" id="player-first-name" placeholder="Player name" list="player-first-names-list">
+              <input type="text" id="player-first-name" placeholder="Player name" list="player-first-names-list" autocomplete="off">
               <label for="commander-first">Commander</label>
-              <input type="text" id="commander-first" placeholder="Commander" list="commanders-first-list" style="margin-bottom: 8px;">
+              <input type="text" id="commander-first" placeholder="Commander" list="commanders-first-list" style="margin-bottom: 8px;" autocomplete="off">
               <button type="button" class="winner-toggle secondary" data-seat-key="first">🏆 Winner</button>
             </div>
             <div class="player-row-portrait">
@@ -1392,9 +1715,9 @@
             <div class="player-row-inputs">
               <h4>Seat 2 (2nd to Play)</h4> <!-- Changed to h4 -->
               <label for="player-second-name">Player Name</label>
-              <input type="text" id="player-second-name" placeholder="Player name" list="player-second-names-list">
+              <input type="text" id="player-second-name" placeholder="Player name" list="player-second-names-list" autocomplete="off">
               <label for="commander-second">Commander</label>
-              <input type="text" id="commander-second" placeholder="Commander" list="commanders-second-list" style="margin-bottom: 8px;">
+              <input type="text" id="commander-second" placeholder="Commander" list="commanders-second-list" style="margin-bottom: 8px;" autocomplete="off">
               <button type="button" class="winner-toggle secondary" data-seat-key="second">🏆 Winner</button>
             </div>
             <div class="player-row-portrait">
@@ -1406,9 +1729,9 @@
             <div class="player-row-inputs">
               <h4>Seat 3 (3rd to Play)</h4> <!-- Changed to h4 -->
               <label for="player-third-name">Player Name</label>
-              <input type="text" id="player-third-name" placeholder="Player name" list="player-third-names-list">
+              <input type="text" id="player-third-name" placeholder="Player name" list="player-third-names-list" autocomplete="off">
               <label for="commander-third">Commander</label>
-              <input type="text" id="commander-third" placeholder="Commander" list="commanders-third-list" style="margin-bottom: 8px;">
+              <input type="text" id="commander-third" placeholder="Commander" list="commanders-third-list" style="margin-bottom: 8px;" autocomplete="off">
               <button type="button" class="winner-toggle secondary" data-seat-key="third">🏆 Winner</button>
             </div>
             <div class="player-row-portrait">
@@ -1420,9 +1743,9 @@
             <div class="player-row-inputs">
               <h4>Seat 4 (Last to Play)</h4> <!-- Changed to h4 -->
               <label for="player-last-name">Player Name</label>
-              <input type="text" id="player-last-name" placeholder="Player name" list="player-last-names-list">
+              <input type="text" id="player-last-name" placeholder="Player name" list="player-last-names-list" autocomplete="off">
               <label for="commander-last">Commander</label>
-              <input type="text" id="commander-last" placeholder="Commander" list="commanders-last-list" style="margin-bottom: 8px;">
+              <input type="text" id="commander-last" placeholder="Commander" list="commanders-last-list" style="margin-bottom: 8px;" autocomplete="off">
               <button type="button" class="winner-toggle secondary" data-seat-key="last">🏆 Winner</button>
             </div>
             <div class="player-row-portrait">
@@ -1449,6 +1772,7 @@
         <input type="text" id="history-search" placeholder="Search players or commanders..." style="max-width: 300px; margin-bottom: 0;">
       </div>
       <div id="game-history-list" class="history-grid"></div>
+      <div id="history-pagination" style="display: flex; justify-content: center; align-items: center; gap: 16px; margin-top: 16px;"></div>
       </div>
     </div>
 
@@ -1512,14 +1836,7 @@
             <h3>Seat Advantage</h3>
             <div id="seat-advantage-table-content"></div>
           </div>
-          <div class="stats-panel">
-            <div class="stats-header-row">
-              <h3 style="margin:0;">Colour Statistics</h3>
-              <input type="text" id="color-stats-search" list="stats-color-list" placeholder="Search..." style="max-width: 140px; margin:0; padding: 6px 10px; font-size: 0.8rem;">
-            </div>
-            <p id="color-stats-info" style="font-size: 0.75rem; color: var(--muted-text); margin-top: -8px; margin-bottom: 8px;">Showing Top 10</p>
-            <div id="color-statistics-table-content"></div>
-          </div>
+
 
           <div class="stats-panel">
             <h3>Deck Diversity</h3>

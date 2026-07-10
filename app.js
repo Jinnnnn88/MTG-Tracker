@@ -24,7 +24,8 @@ let pendingFetches = new Set();
 let chartInstances = {};
 let chartViewMode = 'weekly'; // Track current chart view state
 let commanderSearchQuery = '';
-let colorSearchQuery = '';
+let historyCurrentPage = 1;
+const gamesPerPage = 5;
 
 // --- UI Feedback Helpers ---
 let loadingCount = 0;
@@ -421,8 +422,10 @@ function validateGame(players) {
 
 function renderGameHistory(filterText = '') {
   const container = document.getElementById('game-history-list');
+  const paginationContainer = document.getElementById('history-pagination');
   if (!container) return;
   container.innerHTML = '';
+  if (paginationContainer) paginationContainer.innerHTML = '';
 
   if (games.length === 0) {
     container.innerHTML = '<div style="grid-column: 1/-1; padding: 40px; text-align: center; color: #999;">No games recorded yet. Start a new game to get started!</div>';
@@ -431,18 +434,33 @@ function renderGameHistory(filterText = '') {
 
   const query = filterText.toLowerCase();
   
-  // If searching, show all matches. If not, show last 5.
-  const displayGames = filterText 
-    ? games.map((g, i) => ({ ...g, originalIndex: i })).filter(game => 
-        game.players.some(p => p.name.toLowerCase().includes(query) || p.commander.toLowerCase().includes(query)) ||
-        game.date.includes(query)
-      ).reverse()
-    : games.map((g, i) => ({ ...g, originalIndex: i })).slice(-5).reverse();
+  // Get all matching games sorted descending by date/insertion
+  const matchedGames = games.map((g, i) => ({ ...g, originalIndex: i })).filter(game => {
+    if (!filterText) return true;
+    return game.players.some(p => p.name.toLowerCase().includes(query) || p.commander.toLowerCase().includes(query)) ||
+           game.date.includes(query);
+  }).reverse();
 
-  if (displayGames.length === 0 && filterText) {
+  if (matchedGames.length === 0 && filterText) {
     container.innerHTML = `<div style="grid-column: 1/-1; padding: 40px; text-align: center; color: #999;">No matches found for "${escapeHtml(filterText)}"</div>`;
     return;
   }
+
+  // Calculate pagination details
+  const totalGamesCount = matchedGames.length;
+  const totalPages = Math.ceil(totalGamesCount / gamesPerPage);
+  
+  // Clamp current page to valid range
+  if (historyCurrentPage > totalPages) {
+    historyCurrentPage = totalPages;
+  }
+  if (historyCurrentPage < 1) {
+    historyCurrentPage = 1;
+  }
+
+  const startIdx = (historyCurrentPage - 1) * gamesPerPage;
+  const endIdx = startIdx + gamesPerPage;
+  const displayGames = matchedGames.slice(startIdx, endIdx);
 
   displayGames.forEach((game) => {
     const index = game.originalIndex;
@@ -473,7 +491,7 @@ function renderGameHistory(filterText = '') {
       <div class="history-card-content">
         <div class="history-card-header">
           <h3>${escapeHtml(formatDateUK(game.date))}</h3>
-          <div class="history-card-winner">${winner ? escapeHtml(winner.name) : 'N/A'}</div>
+          <div class="history-card-winner">${winner ? `🏆 <span class="player-link" data-player-detail="${escapeHtml(winner.name)}">${escapeHtml(winner.name)}</span>` : 'No Winner'}</div>
         </div>
         <div class="history-card-players">${playersHtml}</div>
         <div class="history-actions">
@@ -484,6 +502,41 @@ function renderGameHistory(filterText = '') {
     `;
     container.appendChild(card);
   });
+
+  // Render pagination controls
+  if (paginationContainer && totalPages > 1) {
+    const prevDisabled = historyCurrentPage === 1 ? 'disabled' : '';
+    const nextDisabled = historyCurrentPage === totalPages ? 'disabled' : '';
+    
+    paginationContainer.innerHTML = `
+      <button id="btn-history-prev" class="secondary" ${prevDisabled} style="margin: 0;">&larr; Prev</button>
+      <span style="font-size: 0.95rem; font-weight: 500;">Page ${historyCurrentPage} of ${totalPages}</span>
+      <button id="btn-history-next" class="secondary" ${nextDisabled} style="margin: 0;">Next &rarr;</button>
+    `;
+
+    // Add event listeners to the buttons
+    const prevBtn = document.getElementById('btn-history-prev');
+    const nextBtn = document.getElementById('btn-history-next');
+    
+    if (prevBtn) {
+      prevBtn.addEventListener('click', () => {
+        if (historyCurrentPage > 1) {
+          historyCurrentPage--;
+          renderGameHistory(filterText);
+          container.scrollIntoView({ behavior: 'smooth' });
+        }
+      });
+    }
+    if (nextBtn) {
+      nextBtn.addEventListener('click', () => {
+        if (historyCurrentPage < totalPages) {
+          historyCurrentPage++;
+          renderGameHistory(filterText);
+          container.scrollIntoView({ behavior: 'smooth' });
+        }
+      });
+    }
+  }
 }
 
 function emptyPlacementStats() {
@@ -839,8 +892,7 @@ function renderStats() {
     if (chartGrid) chartGrid.style.display = 'none';
     setHtml('commander-stats-table-content', '');
     setHtml('seat-advantage-table-content', '');
-    setHtml('color-statistics-table-content', '');
-    setHtml('giant-slayers-table-content', '');
+
     setHtml('deck-diversity-table-content', '');
     setHtml('active-days-table-content', '');
     return;
@@ -879,29 +931,7 @@ function renderStats() {
     (a, b) => (b[1].wins/b[1].games) - (a[1].wins/a[1].games) || 0,
     ([k, v]) => `<tr><td>${escapeHtml(k.charAt(0).toUpperCase() + k.slice(1))}</td><td>${winRateCell(v.wins, v.games)}</td></tr>`);
 
-  // --- Colour Stats Search Logic ---
-  const clrQuery = colorSearchQuery.trim().toLowerCase();
-  const filteredColors = Object.entries(stats.colorStats)
-    .filter(([name]) => !clrQuery || name.toLowerCase().includes(clrQuery));
 
-  // Apply Top Performance logic: Wins first, then fewer appearances
-  let finalColors = filteredColors.sort((a, b) => b[1].wins - a[1].wins || a[1].appearances - b[1].appearances);
-  if (!clrQuery) finalColors = finalColors.slice(0, 10);
-
-  // Suggestions: ONLY populate if user has started typing
-  const clrSuggestionsHtml = clrQuery 
-    ? filteredColors.filter(([name]) => name.toLowerCase() !== clrQuery).slice(0, 15).map(([name]) => `<option value="${escapeHtml(name)}">`).join('') 
-    : '';
-  const colorDatalist = document.getElementById('stats-color-list');
-  if (colorDatalist && colorDatalist.innerHTML !== clrSuggestionsHtml) colorDatalist.innerHTML = clrSuggestionsHtml;
-
-  const clrInfo = document.getElementById('color-stats-info');
-  if (clrInfo) clrInfo.textContent = clrQuery ? `Found ${filteredColors.length}` : 'Showing Top 10';
-  
-  const clrTable = document.getElementById('color-statistics-table-content');
-  if (clrTable) clrTable.innerHTML = renderTable('Colour Statistics', ['Colour', 'Performance'], Object.fromEntries(finalColors),
-    (a, b) => b[1].wins - a[1].wins || a[1].appearances - b[1].appearances,
-    ([k, v]) => `<tr><td>${escapeHtml(k)}</td><td>${winRateCell(v.wins, v.appearances)}</td></tr>`);
 
   const deckDiversityTable = document.getElementById('deck-diversity-table-content');
   if (deckDiversityTable) {
@@ -1155,18 +1185,24 @@ function openPlayerModal(playerName) {
   const playerGames = [];
   const commanderUsage = {};
 
-  games.forEach(game => {
+  games.forEach((game, idx) => {
     const p = game.players.find(player => player.name === playerName);
     if (p) {
-      playerGames.push({ date: game.date, commander: p.commander, isWinner: p.isWinner, seat: p.seat });
+      playerGames.push({ date: game.date, commander: p.commander, isWinner: p.isWinner, seat: p.seat, originalIndex: idx });
       commanderUsage[p.commander] = (commanderUsage[p.commander] || 0) + 1;
     }
   });
 
   const allStats = calculateStats();
   const stats = allStats.playerStats[playerName] || { games: 0, wins: 0, currentStreak: 0, maxStreak: 0, giantSlays: 0 };
+
+  const sortedHistory = playerGames.sort((a, b) => {
+    const dateCompare = b.date.localeCompare(a.date);
+    if (dateCompare !== 0) return dateCompare;
+    return b.originalIndex - a.originalIndex;
+  });
+
   const favCommanders = Object.entries(commanderUsage).sort((a, b) => b[1] - a[1]).slice(0, 5);
-  const sortedHistory = playerGames.sort((a, b) => b.date.localeCompare(a.date));
 
   // Player Nemesis Logic
   const matchups = allStats.playerMatchups[playerName] || {};
@@ -1347,8 +1383,14 @@ window.addEventListener('load', () => {
       safeAddListener(`commander-${field.key}`, 'input', async (e) => {
         const query = e.target.value;
         clearTimeout(autocompleteTimers[field.key]);
-        if (query.length < 3) {
-          populateCommanderDataLists(); // Revert to showing local recorded commanders
+
+        const nameInput = document.getElementById(`player-${field.key}-name`);
+        const pName = nameInput ? nameInput.value.trim() : '';
+        const allStats = calculateStats();
+        const hasHistory = allStats.playerStats[pName] && allStats.playerStats[pName].games > 0;
+
+        if (hasHistory || query.length < 3) {
+          populateCommanderDataLists(); // Revert to showing local recorded commanders for this player
           return;
         }
         autocompleteTimers[field.key] = setTimeout(async () => {
@@ -1371,6 +1413,21 @@ window.addEventListener('load', () => {
 
     const navItems = document.querySelectorAll('.nav-item');
     const tabContents = document.querySelectorAll('.tab-content');
+    const updateGameDateIfNew = () => {
+      if (currentGame.index === null) {
+        const today = new Date().toISOString().split('T')[0];
+        const dateInput = document.getElementById('game-date');
+        if (dateInput) dateInput.value = today;
+      }
+    };
+
+    window.addEventListener('focus', updateGameDateIfNew);
+    document.addEventListener('visibilitychange', () => {
+      if (document.visibilityState === 'visible') {
+        updateGameDateIfNew();
+      }
+    });
+
     navItems.forEach(item => {
       item.addEventListener('click', () => {
         const targetTab = item.getAttribute('data-tab');
@@ -1380,15 +1437,16 @@ window.addEventListener('load', () => {
           content.classList.remove('active');
           if (content.id === targetTab) content.classList.add('active');
         });
+        if (targetTab === 'tab-record') renderStats(); // Wait, stats? No, tab-record doesn't have a special render except setting date:
+        if (targetTab === 'tab-record') updateGameDateIfNew();
         if (targetTab === 'tab-stats') renderStats();
         if (targetTab === 'tab-history') renderGameHistory();
         if (targetTab === 'tab-rage-quits') renderRageQuits();
       });
     });
 
-    safeAddListener('history-search', 'input', (e) => renderGameHistory(e.target.value));
+    safeAddListener('history-search', 'input', (e) => { historyCurrentPage = 1; renderGameHistory(e.target.value); });
     safeAddListener('commander-stats-search', 'input', (e) => { commanderSearchQuery = e.target.value; renderStats(); });
-    safeAddListener('color-stats-search', 'input', (e) => { colorSearchQuery = e.target.value; renderStats(); });
     safeAddListener('library-search', 'input', (e) => renderCommanderLibrary(e.target.value));
     safeAddListener('export-data-btn', 'click', exportData);
     safeAddListener('import-data-btn', 'click', () => document.getElementById('import-file-input').click());
