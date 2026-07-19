@@ -20,6 +20,8 @@ let games = [];
 let commanderData = {};
 let rageQuits = [];
 let currentRageQuitIndex = null;
+let miirymSusList = [];
+let currentSusIndex = null;
 let pendingFetches = new Set();
 let chartInstances = {};
 let chartViewMode = 'weekly'; // Track current chart view state
@@ -160,15 +162,17 @@ async function syncToSupabase(table, data, matchKey = 'id') {
 async function loadAllData() {
     // Load everything from Supabase instead of LocalStorage
     showLoading();
-    const [gamesRes, cmdRes, rageRes] = await Promise.all([
+    const [gamesRes, cmdRes, rageRes, susRes] = await Promise.all([
         sb.from('games').select('*').order('date', { ascending: true }),
         sb.from('commander_data').select('*'),
-        sb.from('rage_quits').select('*').order('date', { ascending: false })
+        sb.from('rage_quits').select('*').order('date', { ascending: false }),
+        sb.from('miirym_sus_tracker').select('*').order('date', { ascending: false })
     ]);
 
     if (gamesRes.error) console.error("Supabase Load Error (Games):", gamesRes.error.message);
     if (cmdRes.error) console.error("Supabase Load Error (Commanders):", cmdRes.error.message);
     if (rageRes.error) console.error("Supabase Load Error (Salt):", rageRes.error.message);
+    if (susRes.error) console.error("Supabase Load Error (Sus):", susRes.error.message);
 
     const gameCount = gamesRes.data?.length || 0;
     console.log(`Fetched ${gameCount} games from Supabase`);
@@ -179,6 +183,7 @@ async function loadAllData() {
 
     if (gamesRes.data) games = gamesRes.data;
     if (rageRes.data) rageQuits = rageRes.data;
+    if (susRes.data) miirymSusList = susRes.data;
     
     if (cmdRes.data) {
         commanderData = {};
@@ -1180,6 +1185,33 @@ function renderRageQuits() {
   }
 }
 
+function renderSusTracker() {
+  const countEl = document.getElementById('sus-tracker-count');
+  if (countEl) countEl.textContent = miirymSusList.length;
+
+  const listEl = document.getElementById('sus-tracker-history-list');
+  if (listEl) {
+    const historyHtml = miirymSusList
+      .map((sus, idx) => ({ ...sus, originalIndex: idx }))
+      .sort((a, b) => b.date.localeCompare(a.date)) // Sort newest first
+      .map(sus => `
+        <div style="background: var(--row-bg); padding: 16px; border-radius: 12px; margin-bottom: 12px; border: 1px solid var(--border-color); animation: fadeIn 0.3s ease-out;">
+          <div style="display: flex; justify-content: space-between; align-items: flex-start;">
+            <div style="font-size: 0.75rem; color: var(--muted-text); font-weight: 800; text-transform: uppercase; margin-bottom: 4px; letter-spacing: 0.05em;">
+              ${escapeHtml(formatDateUK(sus.date))}
+            </div>
+            <div style="display: flex; gap: 8px;">
+              <button class="edit-sus-tracker secondary" data-index="${sus.originalIndex}" style="padding: 2px 8px; font-size: 0.7rem; margin: 0;">Edit</button>
+              <button class="delete-sus-tracker secondary" data-index="${sus.originalIndex}" style="padding: 2px 8px; font-size: 0.7rem; margin: 0;">Delete</button>
+            </div>
+          </div>
+          <div style="font-size: 1.1rem; font-weight: 600; color: var(--header-text); line-height: 1.4; margin-top: 4px; white-space: pre-wrap;">${escapeHtml(sus.reason || 'No details provided...')}</div>
+        </div>
+      `).join('');
+    listEl.innerHTML = historyHtml || '<p style="text-align: center; color: var(--muted-text); margin-top: 20px;">No suspicious activity yet. Could he be playing fair?</p>';
+  }
+}
+
 function openPlayerModal(playerName) {
   if (!playerName) return;
   const playerGames = [];
@@ -1352,6 +1384,7 @@ window.addEventListener('load', () => {
     if (gameDateInput) gameDateInput.value = today;
     
     if (document.getElementById('rage-quit-date')) document.getElementById('rage-quit-date').value = today;
+    if (document.getElementById('sus-tracker-date')) document.getElementById('sus-tracker-date').value = today;
     currentGame.date = today;
 
     const safeAddListener = (id, event, callback) => {
@@ -1440,6 +1473,7 @@ window.addEventListener('load', () => {
         if (targetTab === 'tab-stats') renderStats();
         if (targetTab === 'tab-history') renderGameHistory();
         if (targetTab === 'tab-rage-quits') renderRageQuits();
+        if (targetTab === 'tab-sus-tracker') renderSusTracker();
       });
     });
 
@@ -1607,6 +1641,70 @@ window.addEventListener('load', () => {
       }
     });
 
+    safeAddListener('record-sus-tracker', 'click', async () => {
+      const rInput = document.getElementById('sus-tracker-reason'); const dInput = document.getElementById('sus-tracker-date');
+      const reason = rInput ? rInput.value.trim() : ''; const date = dInput ? dInput.value : '';
+      
+      const susData = { date, reason };
+      if (currentSusIndex !== null && miirymSusList[currentSusIndex]) {
+          susData.id = miirymSusList[currentSusIndex].id;
+      }
+
+      showLoading();
+      await sb.from('miirym_sus_tracker').upsert(susData);
+      
+      currentSusIndex = null;
+      if (rInput) rInput.value = '';
+      const cancelBtn = document.getElementById('cancel-sus-edit');
+      if (cancelBtn) cancelBtn.style.display = 'none';
+      document.getElementById('record-sus-tracker').textContent = 'RECORD OFFENSE';
+
+      await loadAllData();
+      showToast('Sus activity recorded.', 'success');
+      hideLoading();
+    });
+
+    safeAddListener('cancel-sus-edit', 'click', () => {
+      currentSusIndex = null;
+      document.getElementById('sus-tracker-reason').value = '';
+      document.getElementById('sus-tracker-date').value = new Date().toISOString().split('T')[0];
+      document.getElementById('cancel-sus-edit').style.display = 'none';
+      document.getElementById('record-sus-tracker').textContent = 'RECORD OFFENSE';
+    });
+
+    safeAddListener('sus-tracker-history-list', 'click', async event => {
+      if (event.target.matches('.delete-sus-tracker')) {
+        const index = Number(event.target.dataset.index);
+        if (confirm('Delete this suspicious record?')) {
+            const id = miirymSusList[index].id;
+            showLoading();
+            try {
+                const { error } = await sb.from('miirym_sus_tracker').delete().eq('id', id);
+                if (error) {
+                    notifyError("Error deleting record: " + error.message);
+                } else {
+                    await loadAllData();
+                    showToast('Sus record deleted.', 'info');
+                }
+            } catch (err) {
+                notifyError("Error deleting record: " + err.message);
+            } finally {
+                hideLoading();
+            }
+        }
+      }
+      if (event.target.matches('.edit-sus-tracker')) {
+        const index = Number(event.target.dataset.index);
+        const sus = miirymSusList[index];
+        currentSusIndex = index;
+        document.getElementById('sus-tracker-date').value = sus.date;
+        document.getElementById('sus-tracker-reason').value = sus.reason || '';
+        document.getElementById('cancel-sus-edit').style.display = 'block';
+        document.getElementById('record-sus-tracker').textContent = 'UPDATE OFFENSE';
+        window.scrollTo({ top: document.getElementById('sus-recording-ui').offsetTop - 100, behavior: 'smooth' });
+      }
+    });
+
     document.body.addEventListener('click', event => {
       const c = event.target.closest('[data-commander-detail]');
       if (c) {
@@ -1628,7 +1726,7 @@ window.addEventListener('load', () => {
 });
 
 function exportData() {
-  const data = { games, commanderData, rageQuits, exportDate: new Date().toISOString() };
+  const data = { games, commanderData, rageQuits, miirymSusList, exportDate: new Date().toISOString() };
   const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a'); a.href = url; a.download = `mtg_backup.json`; a.click(); URL.revokeObjectURL(url);
@@ -1639,6 +1737,7 @@ function importData(jsonString) {
     const data = JSON.parse(jsonString);
     const gamesToImport = data.games || [];
     const rageQuitsToImport = data.rageQuits || [];
+    const miirymSusListToImport = data.miirymSusList || [];
     const commanderDataToImport = data.commanderData || {};
 
     if (confirm(`Migrating ${gamesToImport.length} games. This may take a moment. Continue?`)) {
@@ -1653,10 +1752,15 @@ function importData(jsonString) {
                 date: rest.date,
                 reason: rest.reason
             }));
+            const cleanSus = miirymSusListToImport.map(({ id, ...rest }) => ({
+                date: rest.date,
+                reason: rest.reason
+            }));
 
             const results = await Promise.all([
                 gamesToImport.length ? sb.from('games').insert(cleanGames) : Promise.resolve({ error: null }),
                 rageQuitsToImport.length ? sb.from('rage_quits').insert(cleanRage) : Promise.resolve({ error: null }),
+                miirymSusListToImport.length ? sb.from('miirym_sus_tracker').insert(cleanSus) : Promise.resolve({ error: null }),
                 Object.keys(commanderDataToImport).length ? sb.from('commander_data').upsert(
                     Object.entries(commanderDataToImport).map(([name, val]) => ({
                     name,

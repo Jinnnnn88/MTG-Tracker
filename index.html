@@ -1683,6 +1683,7 @@
       <div class="nav-item" data-tab="tab-history">📜 History</div>
       <div class="nav-item" data-tab="tab-library">📚 Library</div>
       <div class="nav-item" data-tab="tab-rage-quits">🧂 The Salt Mines</div>
+      <div class="nav-item" data-tab="tab-sus-tracker">🐉 Miirym Shenanigans</div>
     </nav>
 
     <div id="tab-record" class="tab-content active">
@@ -1794,6 +1795,28 @@
         <div id="rage-quit-history-container" style="margin-top: 40px; text-align: left; max-width: 600px; margin-left: auto; margin-right: auto;">
           <h3 style="border-bottom: 2px solid var(--border-color); padding-bottom: 10px; margin-bottom: 20px; font-weight: 800;">Meltdown History</h3>
           <div id="rage-quit-history-list"></div>
+        </div>
+      </div>
+    </div>
+
+    <div id="tab-sus-tracker" class="tab-content">
+      <div class="main-card" style="text-align: center; padding: 40px 20px;">
+        <h2 class="card-title" style="font-size: 2.5rem; margin-bottom: 20px;">Miirym Shenanigans</h2>
+        <p class="section-description" style="font-size: 1.2rem;">Tracking Jason's suspiciously perfect hands</p>
+        <div id="sus-tracker-display" style="font-size: 3.5rem; font-weight: 900; color: #10b981; margin: 30px 0; line-height: 1.2;">
+          Jason has been caught <span id="sus-tracker-count" style="font-size: 7rem; display: block; margin: 10px 0;">0</span> times
+        </div>
+        <div id="sus-recording-ui" style="max-width: 450px; margin: 0 auto 40px auto; background: var(--row-bg); padding: 20px; border-radius: 16px; border: 1px solid var(--border-color);">
+          <label for="sus-tracker-date" style="text-align: left;">Date of offense</label>
+          <input type="date" id="sus-tracker-date" style="margin-bottom: 12px; max-width: 100%;">
+          <label for="sus-tracker-reason" style="text-align: left;">What happened?</label>
+          <textarea id="sus-tracker-reason" placeholder="e.g. Turn 1 Sol Ring into Turn 3 Miirym..."></textarea>
+          <button id="record-sus-tracker" style="background: #10b981; color: white; padding: 20px; font-size: 1.2rem; border-radius: 12px; width: 100%; margin: 0; box-shadow: 0 8px 16px rgba(16, 185, 129, 0.25);">RECORD OFFENSE</button>
+          <button id="cancel-sus-edit" class="secondary" style="display: none; width: 100%; padding: 12px; font-size: 1rem; border-radius: 10px; margin-top: 10px; margin-right: 0;">Cancel Edit</button>
+        </div>
+        <div id="sus-tracker-history-container" style="margin-top: 40px; text-align: left; max-width: 600px; margin-left: auto; margin-right: auto;">
+          <h3 style="border-bottom: 2px solid var(--border-color); padding-bottom: 10px; margin-bottom: 20px; font-weight: 800;">Shenanigan History</h3>
+          <div id="sus-tracker-history-list"></div>
         </div>
       </div>
     </div>
