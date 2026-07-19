@@ -1,0 +1,16 @@
+name: Ping Supabase to prevent pause
+
+on:
+  schedule:
+    - cron: '0 0 * * *' # Runs daily at midnight UTC
+  workflow_dispatch: # Allows running manually
+
+jobs:
+  ping-supabase:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Ping Supabase Database
+        run: |
+          curl -s -o /dev/null -w "HTTP_STATUS:%{http_code}" -X GET "https://dgjyqxidptjeoyujdbnu.supabase.co/rest/v1/games?select=id&limit=1" \
+          -H "apikey: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImRnanlxeGlkcHRqZW95dWpkYm51Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODE1NDM1NjQsImV4cCI6MjA5NzExOTU2NH0.KJkUAUpO5KQ5KoTvDrtM_fekLc5fZjn6_CMN6e9YitE" \
+          -H "Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImRnanlxeGlkcHRqZW95dWpkYm51Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODE1NDM1NjQsImV4cCI6MjA5NzExOTU2NH0.KJkUAUpO5KQ5KoTvDrtM_fekLc5fZjn6_CMN6e9YitE"

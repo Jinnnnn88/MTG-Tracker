@@ -249,12 +249,12 @@ async function fetchCommanderImage(commanderName) {
 async function fetchScryfallAutocomplete(query) {
   if (query.length < 3) return [];
   try {
-    const url = `https://api.scryfall.com/cards/search?q=is:commander+name:${encodeURIComponent(query)}`;
+    const url = `https://api.scryfall.com/cards/autocomplete?q=${encodeURIComponent(query)}`;
     const response = await fetch(url);
     if (!response.ok) return [];
     const data = await response.json();
     if (data.data && Array.isArray(data.data)) {
-      return data.data.map(card => card.name);
+      return data.data;
     }
     return [];
   } catch (error) {
@@ -1386,10 +1386,8 @@ window.addEventListener('load', () => {
 
         const nameInput = document.getElementById(`player-${field.key}-name`);
         const pName = nameInput ? nameInput.value.trim() : '';
-        const allStats = calculateStats();
-        const hasHistory = allStats.playerStats[pName] && allStats.playerStats[pName].games > 0;
 
-        if (hasHistory || query.length < 3) {
+        if (query.length < 3) {
           populateCommanderDataLists(); // Revert to showing local recorded commanders for this player
           return;
         }
