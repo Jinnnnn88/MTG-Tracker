@@ -185,11 +185,12 @@
         background: var(--hover-bg);
       }
 
-      .winner-toggle {
+      .winner-toggle, .draw-toggle {
         margin-top: 4px;
         margin-bottom: 0 !important;
         padding: 8px 16px;
         font-size: 0.9rem;
+        cursor: pointer;
       }
 
       .winner-toggle.active {
@@ -199,6 +200,15 @@
       }
       .winner-toggle.active:hover {
         background: var(--accent-blue-hover);
+      }
+
+      .draw-toggle.active {
+        background: #f59e0b;
+        color: white;
+        box-shadow: 0 2px 8px rgba(245, 158, 11, 0.25);
+      }
+      .draw-toggle.active:hover {
+        background: #d97706;
       }
 
       .secondary {

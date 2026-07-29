@@ -1434,21 +1434,20 @@ window.addEventListener('load', () => {
 
     safeAddListener('theme-toggle', 'click', toggleTheme);
 
-    document.querySelectorAll('.winner-toggle').forEach(button => {
-      button.addEventListener('click', (e) => {
-        const btn = e.target.closest('.winner-toggle');
+    document.addEventListener('click', (e) => {
+      const winnerBtn = e.target.closest('.winner-toggle');
+      if (winnerBtn) {
         document.querySelectorAll('.winner-toggle').forEach(b => b.classList.remove('active'));
         document.querySelectorAll('.draw-toggle').forEach(b => b.classList.remove('active'));
-        if (btn) btn.classList.add('active');
-      });
-    });
-
-    document.querySelectorAll('.draw-toggle').forEach(button => {
-      button.addEventListener('click', (e) => {
-        const btn = e.target.closest('.draw-toggle');
+        winnerBtn.classList.add('active');
+        return;
+      }
+      const drawBtn = e.target.closest('.draw-toggle');
+      if (drawBtn) {
         document.querySelectorAll('.winner-toggle').forEach(b => b.classList.remove('active'));
-        if (btn) btn.classList.toggle('active');
-      });
+        drawBtn.classList.toggle('active');
+        return;
+      }
     });
 
     initTheme();
