@@ -380,11 +380,13 @@ function getSeatPlayers() {
   return seatFields.map(field => {
     const commander = titleCase(document.getElementById(`commander-${field.key}`).value);
     ensureCommanderData(commander);
+    const drawToggle = document.querySelector(`.draw-toggle[data-seat-key="${field.key}"]`);
     return {
       seat: field.seat,
       name: titleCase(document.getElementById(`player-${field.key}-name`).value),
       commander,
-      isWinner: field.key === winnerKey
+      isWinner: field.key === winnerKey,
+      isDraw: drawToggle ? drawToggle.classList.contains('active') : false
     };
   });
 }
@@ -410,16 +412,35 @@ function validateGame(players) {
     return null;
   }
 
-  const winner = players.find(p => p.isWinner);
+  const winners = players.filter(p => p.isWinner);
+  const draws = players.filter(p => p.isDraw);
   
-  if (!winner) {
-    showToast('Please select a game winner.', 'error');
+  if (winners.length === 0 && draws.length === 0) {
+    showToast('Please select a game winner or mark it as a draw.', 'error');
     return null;
   }
 
-  if (!winner.name || !winner.commander) {
-    showToast('Selected winner needs a name/commander.', 'error');
+  if (winners.length > 0 && draws.length > 0) {
+    showToast('A game cannot have both winners and draws.', 'error');
     return null;
+  }
+
+  if (winners.length > 1) {
+    showToast('A game can only have one winner.', 'error');
+    return null;
+  }
+
+  if (draws.length === 1) {
+    showToast('A draw requires at least two active players.', 'error');
+    return null;
+  }
+
+  const resolvingPlayers = winners.length > 0 ? winners : draws;
+  for (const player of resolvingPlayers) {
+    if (!player.name || !player.commander) {
+      showToast('Winning or drawing players must have a name and commander.', 'error');
+      return null;
+    }
   }
 
   return validPlayers;
@@ -470,16 +491,21 @@ function renderGameHistory(filterText = '') {
   displayGames.forEach((game) => {
     const index = game.originalIndex;
     const winner = game.players.find(player => player.isWinner);
+    const drawingPlayers = game.players.filter(player => player.isDraw);
     const playersHtml = [...game.players].sort((a, b) => a.seat - b.seat).map(player => {
       const isWinner = player.isWinner ? ' winner' : '';
-      const medal = player.isWinner ? ' 🏆' : '';
+      const isDraw = player.isDraw ? ' draw' : ''; // Optional styling for draw
+      let medal = '';
+      if (player.isWinner) medal = ' 🏆';
+      if (player.isDraw) medal = ' 🤝';
+      
       const image = getCommanderImage(player.commander);
       const portraitHtml = image
         ? `<img src="${escapeHtml(image)}" alt="${escapeHtml(player.commander)}">`
         : '📷';
       const seatLabel = seatFields.find(f => f.seat === player.seat)?.key || player.seat;
       return `
-        <div class="history-player${isWinner}">
+        <div class="history-player${isWinner}${isDraw}">
           <div class="history-player-portrait commander-link" data-commander-detail="${escapeHtml(player.commander)}">${portraitHtml}</div>
           <div class="history-player-info">
             <div class="history-player-position">${escapeHtml(seatLabel)}</div>
@@ -490,13 +516,20 @@ function renderGameHistory(filterText = '') {
       `;
     }).join('');
 
+    let headerStatus = 'No Winner';
+    if (winner) {
+      headerStatus = `🏆 <span class="player-link" data-player-detail="${escapeHtml(winner.name)}">${escapeHtml(winner.name)}</span>`;
+    } else if (drawingPlayers.length > 0) {
+      headerStatus = `🤝 Draw: ${drawingPlayers.map(p => `<span class="player-link" data-player-detail="${escapeHtml(p.name)}">${escapeHtml(p.name)}</span>`).join(', ')}`;
+    }
+
     const card = document.createElement('div');
     card.className = 'history-card';
     card.innerHTML = `
       <div class="history-card-content">
         <div class="history-card-header">
           <h3>${escapeHtml(formatDateUK(game.date))}</h3>
-          <div class="history-card-winner">${winner ? `🏆 <span class="player-link" data-player-detail="${escapeHtml(winner.name)}">${escapeHtml(winner.name)}</span>` : 'No Winner'}</div>
+          <div class="history-card-winner">${headerStatus}</div>
         </div>
         <div class="history-card-players">${playersHtml}</div>
         <div class="history-actions">
@@ -545,7 +578,7 @@ function renderGameHistory(filterText = '') {
 }
 
 function emptyPlacementStats() {
-  return { games: 0, wins: 0 };
+  return { games: 0, wins: 0, draws: 0 };
 }
 
 function calculateStats() {
@@ -605,6 +638,7 @@ function calculateStats() {
       const commanderKey = player.commander;
       const seatLabel = seatFields.find(f => f.seat === player.seat)?.key || player.seat;
       const isWin = player.isWinner;
+      const isDraw = player.isDraw;
 
       // Track Player Matchups
       if (!playerMatchups[playerKey]) playerMatchups[playerKey] = {};
@@ -635,7 +669,7 @@ function calculateStats() {
 
       if (!playerStats[playerKey]) playerStats[playerKey] = { ...emptyPlacementStats(), currentStreak: 0, maxStreak: 0, giantSlays: 0, commanders: {} };
       if (!commanderStats[commanderKey]) commanderStats[commanderKey] = emptyPlacementStats();
-      if (!seatStats[seatLabel]) seatStats[seatLabel] = { games: 0, wins: 0 };
+      if (!seatStats[seatLabel]) seatStats[seatLabel] = { games: 0, wins: 0, draws: 0 };
       if (!deckDiversityStats[playerKey]) deckDiversityStats[playerKey] = { games: 0, commanders: new Set() };
 
       playerStats[playerKey].commanders[commanderKey] = (playerStats[playerKey].commanders[commanderKey] || 0) + 1;
@@ -645,11 +679,15 @@ function calculateStats() {
       [playerStats[playerKey], commanderStats[commanderKey]].forEach(stats => {
         stats.games += 1;
         if (isWin) stats.wins += 1;
+        if (isDraw) stats.draws += 1;
       });
       
       seatStats[seatLabel].games += 1;
       if (isWin) {
         seatStats[seatLabel].wins += 1;
+      }
+      if (isDraw) {
+        seatStats[seatLabel].draws += 1;
       }
 
       const colors = getCommanderColors(player.commander);
@@ -779,7 +817,7 @@ function renderStatsDashboard(stats = calculateStats()) {
       .map(([name, s]) => `
         <div class="stat-detail-row">
           <span class="stat-detail-name player-link" data-player-detail="${escapeHtml(name)}">${escapeHtml(name)}</span>
-          <span class="stat-detail-val">${s.wins} <small>(${(s.wins/s.games*100).toFixed(0)}%)</small></span>
+          <span class="stat-detail-val">${s.wins}W - ${s.draws}D <small>(${(s.wins/s.games*100).toFixed(0)}%)</small></span>
         </div>
       `).join('')}
   `;
@@ -792,7 +830,7 @@ function renderStatsDashboard(stats = calculateStats()) {
       .map(([name, s]) => `
         <div class="stat-detail-row">
           <span class="stat-detail-name commander-link" data-commander-detail="${escapeHtml(name)}">${escapeHtml(name)}</span>
-          <span class="stat-detail-val">${s.wins} <small>(${(s.wins/s.games*100).toFixed(0)}%)</small></span>
+          <span class="stat-detail-val">${s.wins}W - ${s.draws}D <small>(${(s.wins/s.games*100).toFixed(0)}%)</small></span>
         </div>
       `).join('')}
   `;
@@ -836,11 +874,12 @@ function renderAchievementBadge(icon, name, desc, current, target) {
   `;
 }
 
-function winRateCell(wins, games) {
+function winRateCell(wins, draws, games) {
   const rate = games > 0 ? (wins / games * 100).toFixed(0) : 0;
+  const losses = games - wins - draws;
   return `
     <div class="win-rate-wrapper">
-      <span>${rate}% <small style="color:var(--muted-text)">(${wins}/${games})</small></span>
+      <span>${rate}% <small style="color:var(--muted-text)">(${wins}W - ${draws}D - ${losses}L)</small></span>
       <div class="win-rate-bar-bg">
         <div class="win-rate-bar-fill" style="width: ${rate}%"></div>
       </div>
@@ -929,12 +968,12 @@ function renderStats() {
   const cmdTable = document.getElementById('commander-stats-table-content');
   if (cmdTable) cmdTable.innerHTML = renderTable('Commander Stats', ['Commander', 'Performance'], Object.fromEntries(finalCommanders),
     (a, b) => b[1].wins - a[1].wins || a[1].games - b[1].games,
-    ([k, v]) => `<tr><td>${commanderCell(k)}</td><td>${winRateCell(v.wins, v.games)}</td></tr>`);
+    ([k, v]) => `<tr><td>${commanderCell(k)}</td><td>${winRateCell(v.wins, v.draws, v.games)}</td></tr>`);
 
   const seatTable = document.getElementById('seat-advantage-table-content');
   if (seatTable) seatTable.innerHTML = renderTable('Seat Advantage', ['Seat', 'Performance'], stats.seatStats,
     (a, b) => (b[1].wins/b[1].games) - (a[1].wins/a[1].games) || 0,
-    ([k, v]) => `<tr><td>${escapeHtml(k.charAt(0).toUpperCase() + k.slice(1))}</td><td>${winRateCell(v.wins, v.games)}</td></tr>`);
+    ([k, v]) => `<tr><td>${escapeHtml(k.charAt(0).toUpperCase() + k.slice(1))}</td><td>${winRateCell(v.wins, v.draws, v.games)}</td></tr>`);
 
 
 
@@ -1031,6 +1070,7 @@ function resetCurrentGame() {
     if (nameInput) nameInput.value = '';
     if (cmdInput) cmdInput.value = '';
     document.querySelectorAll('.winner-toggle').forEach(btn => btn.classList.remove('active'));
+    document.querySelectorAll('.draw-toggle').forEach(btn => btn.classList.remove('active'));
     updatePortraitPreview(field.key);
   });
   currentGame = { date: today, players: [], index: null };
@@ -1398,7 +1438,16 @@ window.addEventListener('load', () => {
       button.addEventListener('click', (e) => {
         const btn = e.target.closest('.winner-toggle');
         document.querySelectorAll('.winner-toggle').forEach(b => b.classList.remove('active'));
+        document.querySelectorAll('.draw-toggle').forEach(b => b.classList.remove('active'));
         if (btn) btn.classList.add('active');
+      });
+    });
+
+    document.querySelectorAll('.draw-toggle').forEach(button => {
+      button.addEventListener('click', (e) => {
+        const btn = e.target.closest('.draw-toggle');
+        document.querySelectorAll('.winner-toggle').forEach(b => b.classList.remove('active'));
+        if (btn) btn.classList.toggle('active');
       });
     });
 
@@ -1549,6 +1598,7 @@ window.addEventListener('load', () => {
           document.getElementById(`player-${key}-name`).value = p.name;
           document.getElementById(`commander-${key}`).value = p.commander;
           if (p.isWinner) document.querySelector(`.winner-toggle[data-seat-key="${key}"]`).classList.add('active');
+          if (p.isDraw) document.querySelector(`.draw-toggle[data-seat-key="${key}"]`).classList.add('active');
           updatePortraitPreview(key);
         });
         document.querySelector('[data-tab="tab-record"]').click();
