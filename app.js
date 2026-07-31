@@ -1535,9 +1535,7 @@ window.addEventListener('load', () => {
       event.preventDefault();
       const validPlayers = validateGame(getSeatPlayers());
       if (!validPlayers) return;
-      const drawBtn = document.getElementById('game-draw-btn');
-      const isGameDraw = drawBtn ? drawBtn.classList.contains('active') : false;
-      const game = { date: document.getElementById('game-date').value, players: validPlayers, isDraw: isGameDraw };
+      const game = { date: document.getElementById('game-date').value, players: validPlayers };
       
       showLoading();
       // If we are editing, include the ID so Supabase updates the existing record
