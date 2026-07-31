@@ -375,18 +375,19 @@ function populateDataLists() {
 }
 
 function getSeatPlayers() {
+  const drawBtn = document.getElementById('game-draw-btn');
+  const isGameDraw = drawBtn ? drawBtn.classList.contains('active') : false;
   const winnerToggle = document.querySelector('.winner-toggle.active');
   const winnerKey = winnerToggle ? winnerToggle.dataset.seatKey : null;
   return seatFields.map(field => {
     const commander = titleCase(document.getElementById(`commander-${field.key}`).value);
     ensureCommanderData(commander);
-    const drawToggle = document.querySelector(`.draw-toggle[data-seat-key="${field.key}"]`);
     return {
       seat: field.seat,
       name: titleCase(document.getElementById(`player-${field.key}-name`).value),
       commander,
-      isWinner: field.key === winnerKey,
-      isDraw: drawToggle ? drawToggle.classList.contains('active') : false
+      isWinner: !isGameDraw && field.key === winnerKey,
+      isDraw: isGameDraw
     };
   });
 }
@@ -407,40 +408,18 @@ function validateGame(players) {
     return null;
   }
 
-  if (validPlayers.length < 1) {
-    showToast('Please enter at least 1 player.', 'error');
+  if (validPlayers.length < 2) {
+    showToast('Please enter at least 2 players.', 'error');
     return null;
   }
 
+  const drawBtn = document.getElementById('game-draw-btn');
+  const isGameDraw = drawBtn ? drawBtn.classList.contains('active') : false;
   const winners = players.filter(p => p.isWinner);
-  const draws = players.filter(p => p.isDraw);
-  
-  if (winners.length === 0 && draws.length === 0) {
-    showToast('Please select a game winner or mark it as a draw.', 'error');
-    return null;
-  }
 
-  if (winners.length > 0 && draws.length > 0) {
-    showToast('A game cannot have both winners and draws.', 'error');
+  if (!isGameDraw && winners.length === 0) {
+    showToast('Please select a game winner or mark the game as a draw.', 'error');
     return null;
-  }
-
-  if (winners.length > 1) {
-    showToast('A game can only have one winner.', 'error');
-    return null;
-  }
-
-  if (draws.length === 1) {
-    showToast('A draw requires at least two active players.', 'error');
-    return null;
-  }
-
-  const resolvingPlayers = winners.length > 0 ? winners : draws;
-  for (const player of resolvingPlayers) {
-    if (!player.name || !player.commander) {
-      showToast('Winning or drawing players must have a name and commander.', 'error');
-      return null;
-    }
   }
 
   return validPlayers;
@@ -490,14 +469,11 @@ function renderGameHistory(filterText = '') {
 
   displayGames.forEach((game) => {
     const index = game.originalIndex;
+    const isGameDraw = game.isDraw || (game.players && game.players.length > 0 && !game.players.some(p => p.isWinner));
     const winner = game.players.find(player => player.isWinner);
-    const drawingPlayers = game.players.filter(player => player.isDraw);
     const playersHtml = [...game.players].sort((a, b) => a.seat - b.seat).map(player => {
-      const isWinner = player.isWinner ? ' winner' : '';
-      const isDraw = player.isDraw ? ' draw' : ''; // Optional styling for draw
-      let medal = '';
-      if (player.isWinner) medal = ' 🏆';
-      if (player.isDraw) medal = ' 🤝';
+      const isWinner = player.isWinner && !isGameDraw ? ' winner' : '';
+      let medal = player.isWinner && !isGameDraw ? ' 🏆' : '';
       
       const image = getCommanderImage(player.commander);
       const portraitHtml = image
@@ -505,7 +481,7 @@ function renderGameHistory(filterText = '') {
         : '📷';
       const seatLabel = seatFields.find(f => f.seat === player.seat)?.key || player.seat;
       return `
-        <div class="history-player${isWinner}${isDraw}">
+        <div class="history-player${isWinner}">
           <div class="history-player-portrait commander-link" data-commander-detail="${escapeHtml(player.commander)}">${portraitHtml}</div>
           <div class="history-player-info">
             <div class="history-player-position">${escapeHtml(seatLabel)}</div>
@@ -517,10 +493,10 @@ function renderGameHistory(filterText = '') {
     }).join('');
 
     let headerStatus = 'No Winner';
-    if (winner) {
+    if (isGameDraw) {
+      headerStatus = `🤝 Game Ended in a Draw`;
+    } else if (winner) {
       headerStatus = `🏆 <span class="player-link" data-player-detail="${escapeHtml(winner.name)}">${escapeHtml(winner.name)}</span>`;
-    } else if (drawingPlayers.length > 0) {
-      headerStatus = `🤝 Draw: ${drawingPlayers.map(p => `<span class="player-link" data-player-detail="${escapeHtml(p.name)}">${escapeHtml(p.name)}</span>`).join(', ')}`;
     }
 
     const card = document.createElement('div');
@@ -631,14 +607,16 @@ function calculateStats() {
       }
     }
 
+    const isGameDraw = game.isDraw || (game.players && game.players.length > 0 && !game.players.some(p => p.isWinner));
+    
     game.players.forEach(player => {
       if (!player.name || !player.commander) return;
 
       const playerKey = player.name;
       const commanderKey = player.commander;
       const seatLabel = seatFields.find(f => f.seat === player.seat)?.key || player.seat;
-      const isWin = player.isWinner;
-      const isDraw = player.isDraw;
+      const isWin = player.isWinner && !isGameDraw;
+      const isDraw = isGameDraw || player.isDraw;
 
       // Track Player Matchups
       if (!playerMatchups[playerKey]) playerMatchups[playerKey] = {};
@@ -762,6 +740,9 @@ function renderStatsDashboard(stats = calculateStats()) {
     return;
   }
 
+  const totalDrawGames = games.filter(g => g.isDraw || (g.players && g.players.length > 0 && !g.players.some(p => p.isWinner))).length;
+  const gamesSubtext = totalDrawGames > 0 ? `${games.length} Recorded (${totalDrawGames} Draw${totalDrawGames > 1 ? 's' : ''})` : 'Games stored';
+
   const topPlayer = Object.entries(stats.playerStats).sort((a, b) => b[1].wins - a[1].wins || a[1].games - b[1].games)[0];
   const topCommander = Object.entries(stats.commanderStats).sort((a, b) => b[1].wins - a[1].wins || a[1].games - b[1].games)[0];
   const bestCommander = Object.entries(stats.commanderStats)
@@ -837,7 +818,7 @@ function renderStatsDashboard(stats = calculateStats()) {
 
   if (dashboard) {
     dashboard.innerHTML = `
-      ${renderStatCard('&#x1F3AE;', 'Total Games', games.length, 'Games stored')}
+      ${renderStatCard('&#x1F3AE;', 'Total Games', games.length, gamesSubtext)}
       ${renderStatCard('&#x2694;&#xFE0F;', 'Classic Rivalry', rivalryLabel, rivalry.games > 0 ? `${rivalry.games} Encounters` : 'No data')}
       ${renderStatCard('&#x1F525;', 'Current Hottest Streak', hottestPlayer ? `<span class="player-link" data-player-detail="${escapeHtml(hottestPlayer[0])}">${escapeHtml(hottestPlayer[0])}</span>` : 'N/A', hottestPlayer ? `${hottestPlayer[1].currentStreak} Wins Row` : 'No active streaks', hottestPlayersDetails, hottestCardClass)}
       ${renderStatCard('&#x1F3C6;', 'Top Player', topPlayer ? `<span class="player-link" data-player-detail="${escapeHtml(topPlayer[0])}">${escapeHtml(topPlayer[0])}</span>` : 'N/A', `${topPlayer ? topPlayer[1].wins : 0} Wins`, topPlayersDetails)}
@@ -874,12 +855,11 @@ function renderAchievementBadge(icon, name, desc, current, target) {
   `;
 }
 
-function winRateCell(wins, draws, games) {
+function winRateCell(wins, draws = 0, games = 0) {
   const rate = games > 0 ? (wins / games * 100).toFixed(0) : 0;
-  const losses = games - wins - draws;
   return `
     <div class="win-rate-wrapper">
-      <span>${rate}% <small style="color:var(--muted-text)">(${wins}W - ${draws}D - ${losses}L)</small></span>
+      <span>${rate}% <small style="color:var(--muted-text)">(${wins}W / ${games}G${draws > 0 ? ` • ${draws}D` : ''})</small></span>
       <div class="win-rate-bar-bg">
         <div class="win-rate-bar-fill" style="width: ${rate}%"></div>
       </div>
@@ -1064,13 +1044,18 @@ function resetCurrentGame() {
   const dateInput = document.getElementById('game-date');
   if (dateInput) dateInput.value = today;
 
+  const gameDrawBtn = document.getElementById('game-draw-btn');
+  if (gameDrawBtn) {
+    gameDrawBtn.classList.remove('active');
+    gameDrawBtn.textContent = '🤝 Mark Game as Draw';
+  }
+
   seatFields.forEach(field => {
     const nameInput = document.getElementById(`player-${field.key}-name`);
     const cmdInput = document.getElementById(`commander-${field.key}`);
     if (nameInput) nameInput.value = '';
     if (cmdInput) cmdInput.value = '';
     document.querySelectorAll('.winner-toggle').forEach(btn => btn.classList.remove('active'));
-    document.querySelectorAll('.draw-toggle').forEach(btn => btn.classList.remove('active'));
     updatePortraitPreview(field.key);
   });
   currentGame = { date: today, players: [], index: null };
@@ -1438,14 +1423,23 @@ window.addEventListener('load', () => {
       const winnerBtn = e.target.closest('.winner-toggle');
       if (winnerBtn) {
         document.querySelectorAll('.winner-toggle').forEach(b => b.classList.remove('active'));
-        document.querySelectorAll('.draw-toggle').forEach(b => b.classList.remove('active'));
+        const gameDrawBtn = document.getElementById('game-draw-btn');
+        if (gameDrawBtn) {
+          gameDrawBtn.classList.remove('active');
+          gameDrawBtn.textContent = '🤝 Mark Game as Draw';
+        }
         winnerBtn.classList.add('active');
         return;
       }
-      const drawBtn = e.target.closest('.draw-toggle');
-      if (drawBtn) {
-        document.querySelectorAll('.winner-toggle').forEach(b => b.classList.remove('active'));
-        drawBtn.classList.toggle('active');
+      const gameDrawBtn = e.target.closest('#game-draw-btn');
+      if (gameDrawBtn) {
+        const isActive = gameDrawBtn.classList.toggle('active');
+        if (isActive) {
+          gameDrawBtn.textContent = '🤝 Game Ended in Draw (Active)';
+          document.querySelectorAll('.winner-toggle').forEach(b => b.classList.remove('active'));
+        } else {
+          gameDrawBtn.textContent = '🤝 Mark Game as Draw';
+        }
         return;
       }
     });
@@ -1541,7 +1535,9 @@ window.addEventListener('load', () => {
       event.preventDefault();
       const validPlayers = validateGame(getSeatPlayers());
       if (!validPlayers) return;
-      const game = { date: document.getElementById('game-date').value, players: validPlayers };
+      const drawBtn = document.getElementById('game-draw-btn');
+      const isGameDraw = drawBtn ? drawBtn.classList.contains('active') : false;
+      const game = { date: document.getElementById('game-date').value, players: validPlayers, isDraw: isGameDraw };
       
       showLoading();
       // If we are editing, include the ID so Supabase updates the existing record
@@ -1592,12 +1588,17 @@ window.addEventListener('load', () => {
       if (event.target.matches('.edit-game')) {
         const index = Number(event.target.dataset.index); const game = games[index];
         resetCurrentGame(); currentGame.index = index; document.getElementById('game-date').value = game.date;
+        const isDraw = game.isDraw || (game.players && game.players.length > 0 && !game.players.some(p => p.isWinner));
+        const gameDrawBtn = document.getElementById('game-draw-btn');
+        if (isDraw && gameDrawBtn) {
+          gameDrawBtn.classList.add('active');
+          gameDrawBtn.textContent = '🤝 Game Ended in Draw (Active)';
+        }
         game.players.forEach(p => {
           const key = keyForSeat(p.seat);
           document.getElementById(`player-${key}-name`).value = p.name;
           document.getElementById(`commander-${key}`).value = p.commander;
-          if (p.isWinner) document.querySelector(`.winner-toggle[data-seat-key="${key}"]`).classList.add('active');
-          if (p.isDraw) document.querySelector(`.draw-toggle[data-seat-key="${key}"]`).classList.add('active');
+          if (p.isWinner && !isDraw) document.querySelector(`.winner-toggle[data-seat-key="${key}"]`)?.classList.add('active');
           updatePortraitPreview(key);
         });
         document.querySelector('[data-tab="tab-record"]').click();
