@@ -1702,13 +1702,10 @@
     <div id="tab-record" class="tab-content active">
       <div class="main-card">
         <h2 class="card-title">Record New Game</h2>
-      <div class="grid" style="align-items: flex-end; gap: 16px;">
-        <div style="flex: 1; max-width: 240px;">
-          <label for="game-date">Game Date</label>
-          <input type="date" id="game-date" name="game-date" style="margin-bottom: 0;">
-        </div>
+      <div class="grid">
         <div>
-          <button type="button" id="game-draw-btn" class="secondary" style="height: 42px; margin-bottom: 0;">🤝 Mark Game as Draw</button>
+          <label for="game-date">Game Date</label>
+          <input type="date" id="game-date" name="game-date">
         </div>
       </div>
 
@@ -1775,6 +1772,7 @@
       <div id="edit-mode" style="margin-bottom: 12px; display:none; font-weight:700; color:#0a58ca;"></div>
       <div style="display: flex; gap: 12px; flex-wrap: wrap; margin-top: 20px;"> <!-- Adjusted margin-top -->
         <button id="save-game">Save Game</button>
+        <button type="button" id="game-draw-btn" class="secondary">🤝 Mark Game as Draw</button>
         <button id="cancel-edit" class="secondary" style="display:none;">Cancel Edit</button>
         <button id="clear-game">Clear Current Game</button>
       </div>
@@ -1918,6 +1916,6 @@
 
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-    <script src="app.js?v=2"></script>
+    <script src="app.js?v=3"></script>
   </body>
 </html>

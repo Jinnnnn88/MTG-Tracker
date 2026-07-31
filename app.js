@@ -1125,7 +1125,7 @@ function openCommanderModal(commanderName) {
           <div class="modal-stat" style="grid-column: 1 / -1; border-color: var(--chart-red);">
             <div class="modal-stat-label">Top Nemesis</div>
             <div class="modal-stat-value">${nemesisEntry ? commanderCell(nemesisEntry[0]) : 'None yet'}</div>
-            <div style="font-size:0.8rem; color:var(--muted-text);">${nemesisEntry ? `Wins only ${((nemesisEntry[1].winsAgainst/nemesisEntry[1].games)*100).toFixed(0)}% of the time vs this deck` : 'Play more games to find a rival'}</div>
+            <div style="font-size:0.8rem; color:var(--muted-text);">${nemesisEntry ? `Lowest win rate against this commander (${((nemesisEntry[1].winsAgainst/nemesisEntry[1].games)*100).toFixed(0)}% win rate across ${nemesisEntry[1].games} games)` : 'Play more games to find a rival'}</div>
           </div>
         </div>
         <section>
@@ -1245,7 +1245,8 @@ function openPlayerModal(playerName) {
   games.forEach((game, idx) => {
     const p = game.players.find(player => player.name === playerName);
     if (p) {
-      playerGames.push({ date: game.date, commander: p.commander, isWinner: p.isWinner, seat: p.seat, originalIndex: idx });
+      const isDraw = game.isDraw || (game.players && game.players.length > 0 && !game.players.some(x => x.isWinner)) || p.isDraw;
+      playerGames.push({ date: game.date, commander: p.commander, isWinner: p.isWinner && !isDraw, isDraw, seat: p.seat, originalIndex: idx });
       commanderUsage[p.commander] = (commanderUsage[p.commander] || 0) + 1;
     }
   });
@@ -1344,7 +1345,7 @@ function openPlayerModal(playerName) {
                   <tr>
                     <td>${escapeHtml(formatDateUK(item.date))}</td>
                     <td><span class="commander-link" data-commander-detail="${escapeHtml(item.commander)}">${escapeHtml(item.commander)}</span></td>
-                    <td>${item.isWinner ? '🏆 Win' : 'Loss'}</td>
+                    <td>${item.isWinner ? '🏆 Win' : (item.isDraw ? '🤝 Draw' : 'Loss')}</td>
                   </tr>
                 `).join('') || '<tr><td colspan="3">No games played yet.</td></tr>'}
               </tbody>
