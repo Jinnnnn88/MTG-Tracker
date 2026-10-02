@@ -13,4 +13,17 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Ping Supabase Database
-        run: curl -s -X GET "https://dgjyqxidptjeoyujdbnu.supabase.co/rest/v1/games?select=id&limit=1" -H "apikey: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImRnanlxeGlkcHRqZW95dWpkYm51Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODE1NDM1NjQsImV4cCI6MjA5NzExOTU2NH0.KJkUAUpO5KQ5KoTvDrtM_fekLc5fZjn6_CMN6e9YitE" -H "Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImRnanlxeGlkcHRqZW95dWpkYm51Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODE1NDM1NjQsImV4cCI6MjA5NzExOTU2NH0.KJkUAUpO5KQ5KoTvDrtM_fekLc5fZjn6_CMN6e9YitE"
+        uses: actions/github-script@v6
+        with:
+          script: |
+            const url = 'https://dgjyqxidptjeoyujdbnu.supabase.co/rest/v1/games?select=id&limit=1';
+            const headers = {
+              'apikey': 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImRnanlxeGlkcHRqZW95dWpkYm51Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODE1NDM1NjQsImV4cCI6MjA5NzExOTU2NH0.KJkUAUpO5KQ5KoTvDrtM_fekLc5fZjn6_CMN6e9YitE',
+              'Authorization': 'Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImRnanlxeGlkcHRqZW95dWpkYm51Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODE1NDM1NjQsImV4cCI6MjA5NzExOTU2NH0.KJkUAUpO5KQ5KoTvDrtM_fekLc5fZjn6_CMN6e9YitE'
+            };
+            const res = await fetch(url, { headers });
+            if (!res.ok) {
+              console.error('Ping failed with status:', res.status);
+              process.exit(1);
+            }
+            console.log('Ping successful:', res.status);
